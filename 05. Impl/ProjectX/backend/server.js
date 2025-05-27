@@ -8,13 +8,47 @@ const LoginLog = require('./models/LoginLog');
 const nodemailer = require('nodemailer');
 const Course = require('./models/Course');
 const Attendance = require('./models/Attendance');
+const Report = require('./models/Report');
+const WebSocket = require('ws');
+const reportsRouter = require('./routes/reports');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Create WebSocket server
+const wss = new WebSocket.Server({ noServer: true });
+
+// Store active WebSocket connections
+const activeConnections = new Map();
+
+// WebSocket connection handler
+wss.on('connection', (ws, req) => {
+  const courseId = req.url.split('/').pop();
+  console.log(`WebSocket connection established for course: ${courseId}`);
+  
+  // Store the connection
+  activeConnections.set(courseId, ws);
+
+  ws.on('close', () => {
+    console.log(`WebSocket connection closed for course: ${courseId}`);
+    activeConnections.delete(courseId);
+  });
+});
+
+// Function to broadcast attendance updates
+const broadcastAttendanceUpdate = (courseId) => {
+  const ws = activeConnections.get(courseId);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'new_scan' }));
+  }
+};
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use('/api/reports', reportsRouter);
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/projectx')
@@ -29,7 +63,7 @@ app.get('/api/health', (req, res) => {
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, role } = req.body;
 
     // Find user by username
     const user = await User.findOne({ username });
@@ -41,6 +75,11 @@ app.post('/api/auth/login', async (req, res) => {
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid username or password' });
+    }
+
+    // Check if user's role matches the selected role
+    if (user.role !== role) {
+      return res.status(401).json({ message: `Invalid role. Please select ${user.role} role to login.` });
     }
 
     // Create login log entry
@@ -86,6 +125,11 @@ app.post('/api/auth/reset-password', async (req, res) => {
 app.post('/api/logs/mock', async (req, res) => {
   try {
     const { userId, username, role } = req.body;
+
+    // Validate userId format
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid userId format' });
+    }
 
     // Create mock login log entry
     const loginLog = new LoginLog({
@@ -641,6 +685,9 @@ app.post('/api/attendance/scan', async (req, res) => {
 
     await attendance.save();
 
+    // Broadcast attendance update
+    broadcastAttendanceUpdate(qrInfo.courseId);
+
     res.json({ message: 'Attendance recorded successfully' });
   } catch (error) {
     console.error('Scan QR error:', error);
@@ -669,7 +716,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Create HTTP server
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+// Upgrade HTTP server to WebSocket server
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+  
+  if (pathname.startsWith('/attendance/')) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
 }); 

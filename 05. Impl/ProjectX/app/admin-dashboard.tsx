@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import { LinearGradient } from 'expo-linear-gradient';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -13,6 +14,7 @@ export default function AdminDashboard() {
   });
 
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [cardScale] = useState(new Animated.Value(1));
 
   // Handle back button press
@@ -32,11 +34,13 @@ export default function AdminDashboard() {
   }, [fontsLoaded, fontError]);
 
   const handleLogout = () => {
-    setShowLogoutConfirm(true);
+    setShowSettingsMenu(false); // Close the settings menu
+    setShowLogoutConfirm(true); // Show the confirmation modal
   };
 
   const handleConfirmLogout = () => {
-    router.replace('/');
+    setShowLogoutConfirm(false); // Hide the confirmation modal
+    router.replace('/'); // Navigate to login page
   };
 
   const handleManageUsers = () => {
@@ -45,6 +49,15 @@ export default function AdminDashboard() {
 
   const handleManageCourses = () => {
     router.push('/manage-courses');
+  };
+
+  const handleViewReports = () => {
+    router.push('/view-reports');
+  };
+
+  const handleViewSecurityLogs = () => {
+    router.push('/security-logs');
+    setShowSettingsMenu(false); // Close the settings menu
   };
 
   const handlePressIn = () => {
@@ -67,28 +80,64 @@ export default function AdminDashboard() {
 
   return (
     <View style={styles.container}>
+      <View style={[styles.backgroundGradient, { backgroundColor: '#000000' }]} />
+
+      {/* Settings Dropdown Portal */}
+      {showSettingsMenu && (
+        <View style={styles.dropdownOverlay}>
+          <View style={[styles.settingsDropdown, { top: 100, right: 20 }]}>
+            <TouchableOpacity 
+              style={styles.dropdownItem}
+              onPress={handleLogout}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={24} color="#000000" />
+              <Text style={styles.dropdownText}>Logout</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.dropdownItem}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="notifications-outline" size={24} color="#000000" />
+              <Text style={styles.dropdownText}>Notifications</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.dropdownItem}
+              activeOpacity={0.7}
+              onPress={handleViewSecurityLogs}
+            >
+              <Ionicons name="shield-outline" size={24} color="#000000" />
+              <Text style={styles.dropdownText}>Security Logs</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity 
+            style={styles.dropdownBackdrop}
+            onPress={() => setShowSettingsMenu(false)}
+            activeOpacity={1}
+          />
+        </View>
+      )}
+
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-            <View style={styles.headerTitleContainer}>
-              <Text style={[styles.headerTitle, styles.headerTitleChe]}>CHE</Text>
-              <Text style={[styles.headerTitle, styles.headerTitleQr]}>QR</Text>
-            </View>
+            <Text style={styles.appName}>CLASSTRACK</Text>
           </View>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Ionicons name="log-out-outline" size={32} color="#002147" />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity 
+              style={styles.iconWrapper}
+              onPress={() => setShowSettingsMenu(!showSettingsMenu)}
+            >
+              <Ionicons name="menu" size={28} color="#000000" />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={styles.welcomeText}>Admin Dashboard</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.cardContainer}>
+          <View style={{ width: '48%', marginBottom: 16 }}>
           <Animated.View style={{ transform: [{ scale: cardScale }] }}>
             <TouchableOpacity 
               style={styles.card}
@@ -97,19 +146,30 @@ export default function AdminDashboard() {
               onPressOut={handlePressOut}
               activeOpacity={0.9}
             >
-              <View style={[styles.cardIconContainer, styles.usersIconContainer]}>
-                <Ionicons name="people" size={32} color="#1a73e8" />
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>Manage Users</Text>
-                <Text style={styles.cardDescription}>Add, edit, and remove users</Text>
-              </View>
-              <View style={styles.cardArrow}>
-                <Ionicons name="chevron-forward" size={24} color="#1a73e8" />
-              </View>
+              <LinearGradient
+                colors={['#FFFFFF', '#FFFFFF']}
+                style={styles.cardGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.cardHeader}>
+
+                  <View style={styles.cardTitleContainer}>
+                    <Text style={styles.cardTitle}>Manage Users</Text>
+                    <Text style={styles.cardSubtitle}>User Management</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.cardAction}>View Details</Text>
+
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
+          </View>
 
+          <View style={{ width: '48%', marginBottom: 16 }}>
           <Animated.View style={{ transform: [{ scale: cardScale }] }}>
             <TouchableOpacity 
               style={styles.card}
@@ -118,42 +178,64 @@ export default function AdminDashboard() {
               onPressOut={handlePressOut}
               activeOpacity={0.9}
             >
-              <View style={[styles.cardIconContainer, styles.coursesIconContainer]}>
-                <Ionicons name="book" size={32} color="#1a73e8" />
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>Manage Courses</Text>
-                <Text style={styles.cardDescription}>Add, edit, and manage courses</Text>
-              </View>
-              <View style={styles.cardArrow}>
-                <Ionicons name="chevron-forward" size={24} color="#1a73e8" />
-              </View>
+              <LinearGradient
+                colors={['#FFFFFF', '#FFFFFF']}
+                style={styles.cardGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.cardHeader}>
+
+                  <View style={styles.cardTitleContainer}>
+                    <Text style={styles.cardTitle}>Manage Courses</Text>
+                    <Text style={styles.cardSubtitle}>Course Management</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.cardAction}>View Details</Text>
+
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
+          </View>
 
+          <View style={{ width: '48%', marginBottom: 16 }}>
           <Animated.View style={{ transform: [{ scale: cardScale }] }}>
             <TouchableOpacity 
               style={styles.card}
+              onPress={handleViewReports}
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
               activeOpacity={0.9}
             >
-              <View style={[styles.cardIconContainer, styles.settingsIconContainer]}>
-                <Ionicons name="settings" size={32} color="#1a73e8" />
-              </View>
-              <View style={styles.cardContent}>
-                <Text style={styles.cardTitle}>Settings</Text>
-                <Text style={styles.cardDescription}>Configure system settings</Text>
-              </View>
-              <View style={styles.cardArrow}>
-                <Ionicons name="chevron-forward" size={24} color="#1a73e8" />
-              </View>
+              <LinearGradient
+                colors={['#FFFFFF', '#FFFFFF']}
+                style={styles.cardGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.cardHeader}>
+
+                  <View style={styles.cardTitleContainer}>
+                    <Text style={styles.cardTitle}>View & Export Reports</Text>
+                    <Text style={styles.cardSubtitle}>Reports Management</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardFooter}>
+                  <Text style={styles.cardAction}>View Details</Text>
+
+                </View>
+              </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
+          </View>
+
         </View>
       </ScrollView>
 
-      {/* Logout Confirmation Modal */}
       <Modal
         visible={showLogoutConfirm}
         transparent={true}
@@ -161,28 +243,24 @@ export default function AdminDashboard() {
         onRequestClose={() => setShowLogoutConfirm(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.confirmModal]}>
-            <View style={styles.confirmHeader}>
-              <Ionicons name="log-out-outline" size={48} color="#002147" />
-              <Text style={styles.confirmTitle}>Confirm Logout</Text>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Ionicons name="log-out-outline" size={40} color="#fff" />
             </View>
-            
-            <Text style={styles.confirmText}>
-              Are you sure you want to logout?
-            </Text>
-
-            <View style={styles.confirmButtons}>
+            <Text style={styles.modalTitle}>Logout</Text>
+            <Text style={styles.modalMessage}>Are you sure you want to logout?</Text>
+            <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.confirmButton, styles.cancelConfirmButton]}
+                style={[styles.modalButton, styles.cancelButton]}
                 onPress={() => setShowLogoutConfirm(false)}
               >
-                <Text style={styles.cancelConfirmText}>Cancel</Text>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, styles.logoutConfirmButton]}
+                style={[styles.modalButton, styles.logoutButton]}
                 onPress={handleConfirmLogout}
               >
-                <Text style={styles.logoutConfirmText}>Logout</Text>
+                <Text style={styles.logoutButtonText}>Logout</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -195,113 +273,282 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
   header: {
-    backgroundColor: 'transparent',
-    padding: 20,
-    paddingTop: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    paddingTop: 40,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
   },
   headerContent: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 20,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoImage: {
+  iconWrapper: {
     width: 50,
     height: 50,
-    marginRight: 10,
-  },
-  headerTitleContainer: {
-    flexDirection: 'row',
+    borderRadius: 25,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 15,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  headerTitle: {
-    fontSize: 75,
-    marginTop: 10,
-    lineHeight: 75,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  headerTitleChe: {
-    color: '#002147',
-    fontFamily: 'THEDISPLAYFONT',
-  },
-  headerTitleQr: {
-    color: '#FFD700',
-    fontFamily: 'THEDISPLAYFONT',
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   welcomeText: {
-    fontSize: 18,
-    color: '#002147',
-    opacity: 0.9,
-    fontWeight: 'bold',
-  },
-  logoutButton: {
-    padding: 8,
-    marginLeft: 10,
+    fontSize: 24,
+    color: '#FFFFFF',
+    marginTop: 10,
   },
   content: {
     flex: 1,
-    padding: 20,
   },
   cardContainer: {
-    gap: 16,
+    padding: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   card: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  cardGradient: {
+    padding: 20,
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.1)',
+    marginBottom: 15,
   },
   cardIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginRight: 15,
   },
   usersIconContainer: {
-    backgroundColor: 'rgba(26, 115, 232, 0.1)',
+    backgroundColor: 'rgba(46, 49, 146, 0.1)',
   },
   coursesIconContainer: {
-    backgroundColor: 'rgba(26, 115, 232, 0.1)',
+    backgroundColor: 'rgba(46, 49, 146, 0.1)',
   },
-  settingsIconContainer: {
-    backgroundColor: 'rgba(26, 115, 232, 0.1)',
+  reportsIconContainer: {
+    backgroundColor: 'rgba(46, 49, 146, 0.1)',
   },
-  cardContent: {
+
+  cardTitleContainer: {
     flex: 1,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1a73e8',
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000000',
     marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  cardContent: {
+    marginBottom: 15,
   },
   cardDescription: {
     fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
+    color: '#666666',
+    marginBottom: 15,
   },
-  cardArrow: {
-    marginLeft: 8,
+  cardStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statText: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 4,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(46, 49, 146, 0.1)',
+    paddingTop: 15,
+  },
+  cardAction: {
+    fontSize: 14,
+    color: '#2E3192',
+    fontWeight: '600',
+  },
+  logoutButtonContainer: {
+    padding: 10,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(46, 49, 146, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 30,
+    width: '85%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  modalIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  dropdownOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    zIndex: 1000,
+  },
+  dropdownBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+  },
+  settingsDropdown: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 8,
+    minWidth: 200,
+    borderWidth: 1,
+    borderColor: '#000000',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    zIndex: 1001,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#000000',
+    marginBottom: 4,
+  },
+  dropdownText: {
+    marginLeft: 12,
+    fontSize: 16,
+    color: '#000000',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#000000',
+    marginRight: 15,
+  },
+  logoutButton: {
+    backgroundColor: '#000000',
+  },
+  cancelButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  logoutButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  logoutButtonContainer: {
+    padding: 10,
   },
   modalOverlay: {
     flex: 1,
@@ -310,61 +557,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 25,
-    width: '90%',
+    padding: 30,
+    width: '85%',
     maxWidth: 400,
-  },
-  confirmModal: {
-    width: '90%',
-    maxWidth: 400,
-    padding: 24,
-  },
-  confirmHeader: {
     alignItems: 'center',
-    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  confirmTitle: {
+  modalIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#002147',
-    marginTop: 8,
-  },
-  confirmText: {
-    fontSize: 16,
-    color: '#666',
+    color: '#000000',
+    marginBottom: 15,
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
   },
-  confirmButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 8,
-  },
-  cancelConfirmButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  logoutConfirmButton: {
-    backgroundColor: '#002147',
-  },
-  cancelConfirmText: {
-    color: '#666',
+  modalMessage: {
     fontSize: 16,
-    fontWeight: '600',
+    color: '#666666',
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  logoutConfirmText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-}); 
+});

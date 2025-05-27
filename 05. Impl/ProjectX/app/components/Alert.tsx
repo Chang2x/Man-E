@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#002147',
+    color: '#2E3192',
     marginTop: 8,
     textAlign: 'center',
   },
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   closeButton: {
-    backgroundColor: '#002147',
+    backgroundColor: '#2E3192',
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 8,

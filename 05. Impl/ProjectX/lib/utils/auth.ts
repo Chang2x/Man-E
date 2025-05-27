@@ -2,9 +2,14 @@ import crypto from 'crypto';
 import { User } from '../models/User';
 import { connectDB } from '../db';
 import { authenticateUser as apiAuthenticateUser } from '../api';
+import { Platform } from 'react-native';
 
 const API_CONFIG = {
-  baseURL: 'http://192.168.0.247:3000/api',
+  baseURL: Platform.select({
+    android: 'http://10.0.2.2:3000/api',  // Android emulator
+    ios: 'http://192.168.56.1:3000/api',  // iOS simulator or physical device
+    default: 'http://192.168.56.1:3000/api',
+  }),
   headers: {
     'Content-Type': 'application/json',
   },

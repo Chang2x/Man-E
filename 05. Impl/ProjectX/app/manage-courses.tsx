@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { User, getUsers, createCourse, Course, getCourses, deleteCourse, updateCourse } from '../lib/api';
+import { LinearGradient } from 'expo-linear-gradient';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -111,13 +112,13 @@ export default function ManageCourses() {
         setIsLoadingMore(true);
       }
 
-      const coursesData = await getCourses(pageNumber, ITEMS_PER_PAGE);
+      const coursesData = await getCourses();
       
       if (shouldAppend) {
         // Filter out any potential duplicates before appending
         setCourses(prevCourses => {
           const existingIds = new Set(prevCourses.map(course => course._id));
-          const newCourses = coursesData.filter(course => !existingIds.has(course._id));
+          const newCourses = coursesData.filter((course: Course) => !existingIds.has(course._id));
           return [...prevCourses, ...newCourses];
         });
       } else {
@@ -137,7 +138,7 @@ export default function ManageCourses() {
   };
 
   const handleBack = () => {
-    router.back();
+    router.push('/admin-dashboard');
   };
 
   const openDrawer = () => {
@@ -240,7 +241,11 @@ export default function ManageCourses() {
       let updatedCourse;
       if (selectedCourse) {
         // Update existing course
-        updatedCourse = await updateCourse(selectedCourse._id, formData);
+        const lecturer = lecturers.find(l => l._id === formData.lecturerId);
+        updatedCourse = await updateCourse(selectedCourse._id, {
+          ...formData,
+          lecturerId: lecturer ? { _id: lecturer._id, firstName: lecturer.firstName, lastName: lecturer.lastName } : undefined
+        });
         setSuccessMessage('Course updated successfully!');
       } else {
         // Create new course
@@ -388,68 +393,63 @@ export default function ManageCourses() {
         newCourseId === course._id && styles.highlightedCard
       ]}
     >
-      <View style={styles.courseImageContainer}>
-        <Image
-          source={require('../assets/images/c_image.jpg')}
-          style={styles.courseImage}
-        />
-        <View style={styles.courseOverlay}>
-          <View style={styles.courseActions}>
-            <TouchableOpacity 
-              key={generateUniqueKey('edit', course._id)}
-              style={[styles.courseActionButton, styles.editButton]}
-              onPress={() => handleEditCourse(course)}
-            >
-              <Ionicons name="create-outline" size={24} color="#FFD700" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              key={generateUniqueKey('assign', course._id)}
-              style={[styles.courseActionButton, styles.assignButton]}
-              onPress={() => handleAssignStudents(course)}
-            >
-              <Ionicons name="people-outline" size={24} color="#FFD700" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              key={generateUniqueKey('delete', course._id)}
-              style={[styles.courseActionButton, styles.deleteButton]}
-              onPress={() => handleDeletePress(course)}
-              disabled={isDeleting}
-            >
-              <Ionicons name="trash-outline" size={24} color="#FFD700" />
-            </TouchableOpacity>
+      <View style={[styles.cardHeader, { backgroundColor: '#111' }]}>
+        <View style={styles.cardHeaderContent}>
+          <View style={styles.courseInfo}>
+            <Text style={styles.courseCode}>{course.courseCode}</Text>
+            <Text style={styles.courseTitle}>{course.courseName}</Text>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={() => handleEditCourse(course)}
+              >
+                <Ionicons name="create-outline" size={20} color="#000" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={() => handleAssignStudents(course)}
+              >
+                <Ionicons name="people-outline" size={20} color="#000" />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.iconButton}
+                onPress={() => handleDeletePress(course)}
+                disabled={isDeleting}
+              >
+                <Ionicons name="trash-outline" size={20} color="#000" />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
-      <View style={styles.courseContent}>
-        <View style={styles.courseHeader}>
-          <View style={styles.courseTitleContainer}>
-            <Text style={styles.courseCode}>{course.courseCode}</Text>
-            <Text style={styles.courseTitle} numberOfLines={1}>{course.courseName}</Text>
+
+      <View style={styles.cardBody}>
+        <View style={styles.instructorSection}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="person-circle-outline" size={18} color="#fff" />
+            <Text style={styles.sectionTitle}>Instructor</Text>
           </View>
-          <View style={styles.instructorBadge}>
-            <Ionicons name="person" size={16} color="#666" />
             <Text style={styles.instructorText}>
               {course.lecturerId ? `${course.lecturerId.firstName} ${course.lecturerId.lastName}` : 'Not assigned'}
             </Text>
-          </View>
         </View>
         
-        <View style={styles.schedulesContainer}>
+        <View style={styles.scheduleSection}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="calendar-outline" size={18} color="#4A00E0" />
+            <Text style={styles.sectionTitle}>Schedule</Text>
+          </View>
+          <View style={styles.scheduleGrid}>
           {course.schedules.map((schedule, scheduleIndex) => (
             <View 
               key={generateUniqueKey('schedule', course._id, scheduleIndex)} 
-              style={styles.scheduleCard}
+                style={styles.scheduleItem}
             >
-              <View style={styles.scheduleHeader}>
-                <Ionicons name="calendar" size={16} color="#002147" />
                 <Text style={styles.scheduleDays}>{schedule.days.join(', ')}</Text>
-              </View>
-              <View style={styles.scheduleTime}>
-                <Ionicons name="time" size={16} color="#002147" />
-                <Text style={styles.timeText}>{schedule.startTime} - {schedule.endTime}</Text>
-              </View>
+                <Text style={styles.scheduleTime}>{schedule.startTime} - {schedule.endTime}</Text>
             </View>
           ))}
+          </View>
         </View>
       </View>
     </View>
@@ -464,11 +464,6 @@ export default function ManageCourses() {
 
   const renderListHeader = () => (
     <>
-      <TouchableOpacity style={styles.addButton} onPress={handleAddCourse}>
-        <Ionicons name="add-circle" size={24} color="#fff" />
-        <Text style={styles.addButtonText}>Add Course</Text>
-      </TouchableOpacity>
-
       {successMessage && (
         <View style={styles.successContainer}>
           <Ionicons name="checkmark-circle" size={20} color="#4caf50" />
@@ -481,6 +476,7 @@ export default function ManageCourses() {
   const renderDrawer = () => (
     <Animated.View
       style={[
+        styles.drawerOverlay,
         styles.drawer,
         {
           height: drawerHeight,
@@ -489,11 +485,18 @@ export default function ManageCourses() {
     >
       <View style={styles.drawerHeader} {...panResponder.panHandlers}>
         <View style={styles.drawerHandle} />
+        <View style={styles.drawerTitleContainer}>
+          <Ionicons 
+            name={selectedCourse ? "create" : "add-circle"} 
+            size={24} 
+            color="#4A00E0" 
+          />
         <Text style={styles.drawerTitle}>
           {selectedCourse ? 'Edit Course' : 'Add New Course'}
         </Text>
+        </View>
         <TouchableOpacity onPress={closeDrawer} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color="#002147" />
+          <Ionicons name="close" size={24} color="#4A00E0" />
         </TouchableOpacity>
       </View>
 
@@ -502,20 +505,21 @@ export default function ManageCourses() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.formContainer}>
         <View style={styles.formSection}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="book-outline" size={24} color="#1a73e8" />
-            <Text style={styles.sectionTitle}>Course Information</Text>
+            <View style={styles.formSectionHeader}>
+              <Text style={styles.formSectionTitle}>Course Details</Text>
           </View>
+
+            <View style={styles.inputGroup}>
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Course Code</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="code-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={formData.courseCode}
                 onChangeText={(text) => setFormData({ ...formData, courseCode: text })}
-                placeholder="Enter course code"
+                    placeholder="e.g., CS101"
                 placeholderTextColor="#999"
               />
             </View>
@@ -524,12 +528,11 @@ export default function ManageCourses() {
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Course Name</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="school-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={formData.courseName}
                 onChangeText={(text) => setFormData({ ...formData, courseName: text })}
-                placeholder="Enter course name"
+                    placeholder="e.g., Introduction to Programming"
                 placeholderTextColor="#999"
               />
             </View>
@@ -538,7 +541,6 @@ export default function ManageCourses() {
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Description</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="document-text-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.textArea]}
                 value={formData.description}
@@ -548,86 +550,81 @@ export default function ManageCourses() {
                 multiline
                 numberOfLines={4}
               />
+                </View>
             </View>
           </View>
         </View>
 
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="person-outline" size={24} color="#1a73e8" />
-            <Text style={styles.sectionTitle}>Lecturer</Text>
+              <Text style={styles.sectionTitle}>Instructor</Text>
           </View>
+
           <TouchableOpacity
-            style={styles.selectContainer}
+              style={styles.lecturerSelector}
             onPress={() => setShowLecturerModal(true)}
           >
-            <View style={styles.selectContent}>
-              <Ionicons name="person-circle-outline" size={20} color="#666" style={styles.inputIcon} />
-              <Text style={styles.selectText}>
-                {formData.lecturerId
-                  ? lecturers.find(l => l._id === formData.lecturerId)?.firstName + ' ' + lecturers.find(l => l._id === formData.lecturerId)?.lastName
-                  : 'Select lecturer'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color="#666" />
-            </View>
+              <View style={styles.lecturerSelectorContent}>
+                <View style={styles.lecturerInfo}>
+                  <Text style={styles.lecturerSelectorText}>
+                    {formData.lecturerId
+                      ? lecturers.find(l => l._id === formData.lecturerId)?.firstName + ' ' + 
+                        lecturers.find(l => l._id === formData.lecturerId)?.lastName
+                      : 'Select instructor'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={24} color="#fff" />
+              </View>
           </TouchableOpacity>
         </View>
 
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="calendar-outline" size={24} color="#1a73e8" />
             <Text style={styles.sectionTitle}>Schedule</Text>
           </View>
-          <View style={styles.scheduleContainer}>
+
+            <View style={styles.scheduleList}>
             {formData.schedules.map((schedule, index) => (
-              <View 
-                key={generateUniqueKey('form-schedule', `schedule-${index}`, index)} 
-                style={styles.scheduleItem}
-              >
-                <View style={styles.scheduleInfo}>
-                  <Ionicons name="calendar" size={16} color="#1a73e8" />
-                  <Text style={styles.scheduleText}>
-                    {schedule.days.join(', ')} {schedule.startTime}-{schedule.endTime}
-                  </Text>
+                <View key={index} style={styles.formScheduleItem}>
+                  <View style={styles.formScheduleDays}>
+                    {schedule.days.map((day, i) => (
+                      <View key={i} style={styles.dayTag}>
+                        <Text style={styles.formScheduleDays}>{day}</Text>
                 </View>
-                <TouchableOpacity
-                  style={styles.removeButton}
-                  onPress={() => handleRemoveSchedule(index)}
-                >
-                  <Ionicons name="close-circle" size={20} color="#ff4444" />
-                </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={styles.formScheduleTime}>
+                    {schedule.startTime} - {schedule.endTime}
+                  </Text>
               </View>
             ))}
+
             <TouchableOpacity
               style={styles.addScheduleButton}
               onPress={() => setShowScheduleModal(true)}
             >
-              <Ionicons name="add-circle-outline" size={20} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.addScheduleButtonText}>Add Schedule</Text>
+              <Text style={styles.addScheduleText}>Add Schedule</Text>
             </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        <View style={styles.drawerButtons}>
+        <View style={styles.drawerActions}>
           <TouchableOpacity
-            style={[styles.drawerButton, styles.cancelButton]}
+            style={[styles.modalButton, styles.formCancelButton]}
             onPress={closeDrawer}
           >
-            <Ionicons name="close" size={20} color="#666" style={styles.buttonIcon} />
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.drawerButton, styles.saveButton]}
+            style={styles.saveButton}
             onPress={handleSubmit}
             disabled={isSaving}
           >
             {isSaving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <>
-                <Ionicons name="checkmark" size={20} color="#fff" style={styles.buttonIcon} />
-                <Text style={styles.saveButtonText}>Save</Text>
-              </>
+              <Text style={styles.saveButtonText}>Save Course</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -666,12 +663,11 @@ export default function ManageCourses() {
                 }}
               >
                 <View style={styles.lecturerInfo}>
-                  <Ionicons name="person-circle" size={24} color="#1a73e8" />
-                  <View style={styles.lecturerDetails}>
-                    <Text style={styles.lecturerName}>
+                  <View style={styles.modalLecturerDetails}>
+                    <Text style={styles.modalLecturerName}>
                       {lecturer.firstName} {lecturer.lastName}
                     </Text>
-                    <Text style={styles.lecturerEmail}>{lecturer.email}</Text>
+                    <Text style={styles.modalLecturerEmail}>{lecturer.email}</Text>
                   </View>
                 </View>
                 {formData.lecturerId === lecturer._id && (
@@ -778,7 +774,7 @@ export default function ManageCourses() {
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={[styles.modalButton, styles.formCancelButton]}
                 onPress={() => setShowScheduleModal(false)}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -823,31 +819,31 @@ export default function ManageCourses() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.backgroundGradient} />
+
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={32} color="#002147" />
-            </TouchableOpacity>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
+          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={28} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerRight}>
             <View style={styles.headerTitleContainer}>
-              <Text style={[styles.headerTitle, styles.headerTitleChe]}>CHE</Text>
-              <Text style={[styles.headerTitle, styles.headerTitleQr]}>QR</Text>
+              <Text style={[styles.headerTitle, styles.headerTitleChe]}>CLASS</Text>
+              <Text style={[styles.headerTitle, styles.headerTitleQr]}>TRACK</Text>
             </View>
+            <TouchableOpacity onPress={handleAddCourse} style={styles.addButton}>
+              <Ionicons name="add-circle-outline" size={28} color="#fff" />
+            </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.welcomeText}>Manage Courses</Text>
       </View>
 
       <View style={styles.content}>
         {isLoading ? (
-          <ActivityIndicator size="large" color="#1a73e8" style={styles.loader} />
+          <ActivityIndicator size="large" color="#4A00E0" style={styles.loader} />
         ) : error ? (
           <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={20} color="#D32F2F" style={styles.errorIcon} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : (
@@ -875,7 +871,7 @@ export default function ManageCourses() {
             ListFooterComponent={() => (
               isLoadingMore ? (
                 <View style={styles.loadingMoreContainer}>
-                  <ActivityIndicator size="small" color="#1a73e8" />
+                  <ActivityIndicator size="small" color="#4A00E0" />
                   <Text style={styles.loadingMoreText}>Loading more courses...</Text>
                 </View>
               ) : null
@@ -1000,31 +996,36 @@ export default function ManageCourses() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
   },
   header: {
-    backgroundColor: 'transparent',
-    padding: 20,
-    paddingTop: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    paddingTop: 40,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
   },
   headerContent: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    position: 'relative',
+    paddingRight: 20,
+  },
+  headerRight: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  backButton: {
-    marginRight: 10,
-  },
   logoImage: {
-    width: 50,
-    height: 50,
+    width: 40,
+    height: 40,
     marginRight: 10,
   },
   headerTitleContainer: {
@@ -1032,288 +1033,241 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 75,
-    marginTop: 10,
-    lineHeight: 75,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
   },
   headerTitleChe: {
-    color: '#002147',
-    fontFamily: 'THEDISPLAYFONT',
+    marginRight: 2,
   },
   headerTitleQr: {
-    color: '#FFD700',
-    fontFamily: 'THEDISPLAYFONT',
+    color: '#ccc',
   },
   welcomeText: {
     fontSize: 18,
-    color: '#002147',
-    opacity: 0.9,
-    fontWeight: 'bold',
+    color: '#000',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  backButton: {
+    padding: 10,
+    position: 'absolute',
+    left: 0,
   },
   content: {
     flex: 1,
     padding: 20,
   },
-  addButton: {
+  loader: {
+    marginTop: 20,
+  },
+  errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  errorIcon: {
+    marginRight: 10,
+  },
+  errorText: {
+    color: '#ff4444',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  emptyState: {
+    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a73e8',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 24,
-    elevation: 4,
-    shadowColor: '#1a73e8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    padding: 40,
   },
-  addButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  courseList: {
-    paddingBottom: 20,
-    minHeight: '100%',
+  emptyStateText: {
+    fontSize: 16,
+    color: '#ccc',
+    textAlign: 'center',
+    marginTop: 10,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    padding: 24,
+    backgroundColor: '#000',
+    borderRadius: 20,
+    padding: 20,
     width: '90%',
     maxWidth: 400,
-    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  confirmModal: {
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+  },
+  confirmHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+    backgroundColor: '#f0f0f0',
+  },
+  confirmTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2E3192',
+    marginTop: 10,
+  },
+  confirmText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
     marginBottom: 20,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a73e8',
+  confirmButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  confirmButton: {
     flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 5,
+  },
+  cancelConfirmButton: {
+    backgroundColor: '#fff',
+  },
+  deleteConfirmButton: {
+    backgroundColor: '#000',
+  },
+  cancelConfirmText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
     textAlign: 'center',
   },
-  inputContainer: {
-    marginBottom: 18,
-  },
-  inputLabel: {
-    fontSize: 15,
-    color: '#666',
-    marginBottom: 10,
-    fontWeight: '500',
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-    paddingHorizontal: 16,
-  },
-  inputIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#333',
-  },
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 24,
-  },
-  modalButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginHorizontal: 6,
-  },
-  cancelButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  saveButton: {
-    backgroundColor: '#1a73e8',
-    elevation: 4,
-    shadowColor: '#1a73e8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#ffcdd2',
-  },
-  errorText: {
-    color: '#c62828',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  selectContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-    marginBottom: 20,
-  },
-  selectContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  selectText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 8,
-  },
-  scheduleContainer: {
-    gap: 10,
-  },
-  scheduleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8f9fa',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  scheduleInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  scheduleText: {
-    fontSize: 15,
-    color: '#333',
-    fontWeight: '600',
-  },
-  addScheduleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1a73e8',
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  addScheduleButtonText: {
+  deleteConfirmText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
   },
-  modalList: {
-    maxHeight: 400,
+  saveConfirmButton: {
+    backgroundColor: '#fff',
   },
-  modalItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  saveConfirmText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  courseCard: {
+    marginBottom: 20,
+    borderRadius: 16,
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: '#333',
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  cardHeader: {
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  selectedItem: {
-    backgroundColor: '#f0f7ff',
-  },
-  lecturerInfo: {
+  cardHeaderContent: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  lecturerDetails: {
+  courseInfo: {
     flex: 1,
   },
-  lecturerName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  lecturerEmail: {
+  courseCode: {
     fontSize: 14,
-    color: '#666',
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '600',
+    marginBottom: 4,
   },
-  scheduleForm: {
-    padding: 20,
+  courseTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    lineHeight: 24,
   },
-  timeContainer: {
+  actionButtons: {
     flexDirection: 'row',
-    gap: 16,
-    marginTop: 16,
-  },
-  timeInput: {
-    flex: 1,
-  },
-  daysContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
     marginTop: 12,
   },
-  dayButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#f8f9fa',
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: '#333',
   },
-  selectedDay: {
-    backgroundColor: '#1a73e8',
-    borderColor: '#1a73e8',
+  cardBody: {
+    padding: 16,
   },
-  dayButtonText: {
+  scheduleSection: {
+    gap: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {
     fontSize: 15,
-    color: '#666',
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
+  },
+  scheduleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginLeft: 26,
+  },
+  scheduleItem: {
+    backgroundColor: '#111',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    minWidth: '48%',
+  },
+  scheduleDays: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  scheduleTime: {
+    fontSize: 12,
+    color: '#999',
     fontWeight: '500',
   },
-  selectedDayText: {
-    color: '#fff',
+  highlightedCard: {
+    borderWidth: 2,
+    borderColor: '#fff',
+    transform: [{ scale: 1.02 }],
+  },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  successText: {
+    color: '#2e7d32',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   drawerOverlay: {
     position: 'absolute',
@@ -1321,7 +1275,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: '#000',
   },
   drawerBackdrop: {
     position: 'absolute',
@@ -1336,7 +1290,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#fff',
+    backgroundColor: '#000',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     shadowColor: '#000',
@@ -1346,315 +1300,453 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   drawerHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fff',
+  },
+  drawerHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#fff',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  drawerTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  drawerHandle: {
-    position: 'absolute',
-    top: 10,
-    width: 48,
-    height: 4,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 2,
   },
   drawerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#002147',
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
   },
   closeButton: {
     position: 'absolute',
-    right: 16,
-    padding: 4,
+    right: 20,
+    top: 20,
+    zIndex: 1,
+    backgroundColor: '#333',
+    borderRadius: 20,
+    padding: 5,
   },
   drawerContent: {
-    padding: 24,
-  },
-  drawerButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 24,
-    paddingBottom: 24,
-  },
-  drawerButton: {
     flex: 1,
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    marginHorizontal: 6,
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveButton: {
-    backgroundColor: '#1a73e8',
-    elevation: 4,
-    shadowColor: '#1a73e8',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveConfirmText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  saveConfirmButton: {
-    backgroundColor: '#1a73e8',
-  },
-  cancelConfirmButton: {
-    backgroundColor: '#f8f9fa',
-  },
-  confirmModal: {
     padding: 20,
+    backgroundColor: '#000',
   },
-  confirmHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  confirmTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a73e8',
-  },
-  confirmText: {
-    color: '#333',
-    fontSize: 16,
-    marginBottom: 16,
-  },
-  confirmHighlight: {
-    fontWeight: 'bold',
-  },
-  confirmButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  confirmButton: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 5,
-  },
-  deleteConfirmButton: {
-    backgroundColor: '#dc3545',
-  },
-  deleteConfirmText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  cancelConfirmText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: 'bold',
+  formContainer: {
+    padding: 20,
+    backgroundColor: '#000',
   },
   formSection: {
     marginBottom: 24,
   },
-  sectionHeader: {
+  formSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#1a73e8',
-    marginLeft: 10,
+  sectionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  buttonIcon: {
-    marginRight: 8,
+  formSectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#fff',
   },
-  errorText: {
-    color: '#dc3545',
-    fontSize: 12,
-    marginTop: 4,
+  inputGroup: {
+    gap: 16,
   },
-  disabledButton: {
-    opacity: 0.5,
+  inputContainer: {
+    marginBottom: 16,
   },
-  timeInput: {
-    flex: 1,
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
+    marginBottom: 8,
   },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 16,
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+    backgroundColor: '#111',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 16,
+  },
+  lecturerSelector: {
+    backgroundColor: '#111',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e9ecef',
-    paddingHorizontal: 12,
+    borderColor: '#333',
+    padding: 16,
+    marginTop: 8,
   },
-  inputIcon: {
-    marginRight: 8,
+  lecturerSelectorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
   },
-  input: {
-    flex: 1,
-    paddingVertical: 12,
+  lecturerInfo: {
+    alignItems: 'flex-start',
+  },
+  lecturerSelectorText: {
     fontSize: 16,
-    color: '#333',
+    color: '#fff',
   },
-  courseCard: {
+  scheduleList: {
+    gap: 12,
+  },
+  formScheduleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 16,
+  },
+  formScheduleDays: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  formScheduleTime: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  dayTag: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  dayButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  selectedDay: {
+    backgroundColor: '#fff',
+    borderColor: '#fff',
+  },
+  dayButtonText: {
+    fontSize: 15,
+    color: '#666',
+    fontWeight: '500',
+  },
+  selectedDayText: {
+    color: '#000',
+  },
+  addScheduleButton: {
+    borderRadius: 8,
     overflow: 'hidden',
+    marginTop: 8,
+    backgroundColor: '#fff',
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  addScheduleText: {
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  drawerActions: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    justifyContent: 'space-between',
+  },
+  formCancelButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    flex: 1,
+    gap: 8,
+  },
+  submitButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2E3192',
+  },
+  courseSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  fullScreenButton: {
+    padding: 8,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    margin: 16,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    height: 48,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  courseImageContainer: {
-    height: 100,
-    position: 'relative',
+  searchIcon: {
+    marginRight: 12,
+    color: '#666',
   },
-  courseImage: {
+  searchInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#333',
+  },
+  clearSearchButton: {
+    padding: 8,
+  },
+  sessionTabs: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  sessionTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 4,
+    borderRadius: 20,
+  },
+  selectedSessionTab: {
+    backgroundColor: '#2E3192',
+  },
+  sessionTabText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  selectedSessionTabText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  attendanceList: {
+    flex: 1,
+    padding: 16,
+  },
+  noAttendanceText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 24,
+    textAlign: 'center',
+  },
+  attendanceSession: {
+    marginBottom: 24,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#2E3192',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  sessionHeader: {
+    padding: 16,
+  },
+  sessionHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionDate: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  sessionTime: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  studentsList: {
+    padding: 16,
+  },
+  studentItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#111',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  studentInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  studentName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  studentId: {
+    fontSize: 14,
+    color: '#999',
+  },
+  scanTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#000',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  checkmarkIcon: {
+    marginRight: 2,
+  },
+  scanTime: {
+    fontSize: 14,
+    color: '#999',
+    fontWeight: '500',
+  },
+  fullScreenModal: {
+    backgroundColor: '#000',
+  },
+  fullScreenContent: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    maxWidth: '100%',
+    borderRadius: 0,
+    padding: 0,
   },
-  courseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
-    padding: 10,
+  notificationBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF3B30',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
-  courseActions: {
+  notificationText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  qrContainer: {
+    padding: 20,
+    backgroundColor: '#111',
+    borderRadius: 16,
+    marginVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2E3192',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  qrInfoContainer: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  qrInfoItem: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
     gap: 8,
   },
-  courseActionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  courseContent: {
-    padding: 12,
-  },
-  courseHeader: {
-    marginBottom: 10,
-  },
-  courseTitleContainer: {
-    marginBottom: 6,
-  },
-  courseCode: {
-    fontSize: 13,
-    color: '#1a73e8',
-    marginBottom: 4,
-    fontWeight: '600',
-  },
-  courseTitle: {
+  qrInfoText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#002147',
-    lineHeight: 20,
-  },
-  instructorBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f7ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: '#e3f2fd',
-  },
-  instructorText: {
-    fontSize: 12,
-    color: '#1a73e8',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  schedulesContainer: {
-    gap: 6,
-  },
-  scheduleCard: {
-    backgroundColor: '#f8f9fa',
-    padding: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  scheduleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  scheduleDays: {
-    fontSize: 13,
-    color: '#002147',
-    marginLeft: 6,
+    color: '#fff',
     fontWeight: '600',
   },
-  scheduleTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 13,
-    color: '#002147',
-    marginLeft: 6,
-    fontWeight: '500',
-  },
-  highlightedCard: {
-    borderWidth: 2,
-    borderColor: '#1a73e8',
-    transform: [{ scale: 1.02 }],
-  },
-  successContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e8f5e9',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#c8e6c9',
-  },
-  successText: {
-    color: '#2e7d32',
-    fontSize: 15,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyStateText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '500',
-    marginTop: 12,
-  },
-  loader: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  qrDetailText: {
+    fontSize: 14,
+    color: '#999',
   },
   loadingMoreContainer: {
     flexDirection: 'row',
@@ -1664,8 +1756,124 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   loadingMoreText: {
-    color: '#666',
+    color: '#999',
     fontSize: 14,
     fontWeight: '500',
+  },
+  courseList: {
+    paddingBottom: 20,
+  },
+  addButton: {
+    marginTop: 10,
+    padding: 5,
+  },
+  successContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
+  },
+  successText: {
+    color: '#2e7d32',
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  modalList: {
+    maxHeight: 400,
+    backgroundColor: '#000',
+  },
+  modalItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  selectedModalItem: {
+    backgroundColor: '#222',
+  },
+  modalLecturerDetails: {
+    flex: 1,
+  },
+  modalLecturerName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#FFFFFF',
+  },
+  modalLecturerEmail: {
+    fontSize: 14,
+    color: '#999',
+  },
+  selectedItem: {
+    backgroundColor: '#222',
+  },
+  saveButtonText: {
+    color: '#000000',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  scheduleForm: {
+    padding: 20,
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 16,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  timeInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    paddingVertical: 12,
+    fontSize: 16,
+  },
+  daysContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  inputIcon: {
+    marginRight: 8,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  instructorSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  instructorText: {
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: 26,
+  },
+  confirmHighlight: {
+    fontWeight: 'bold',
+    color: '#fff',
   },
 }); 

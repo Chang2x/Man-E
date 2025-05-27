@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, Modal, BackHandler, Alert, TextInput, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, Modal, BackHandler, Alert, TextInput, RefreshControl, Platform, Vibration } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
@@ -9,13 +9,78 @@ import QRCode from 'react-native-qrcode-svg';
 import * as MediaLibrary from 'expo-media-library';
 import ViewShot from 'react-native-view-shot';
 import { API_CONFIG } from '../config';
+import { LinearGradient } from 'expo-linear-gradient';
+
+// Function to get current Philippine time
+const getPhilippineTime = () => {
+  const now = new Date();
+  // Get the current UTC time
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+  // Convert to Philippine time (UTC+8)
+  const phTime = new Date(utcTime + (8 * 60 * 60 * 1000));
+
+  // Format the time to ensure accuracy
+  const hours = phTime.getHours().toString().padStart(2, '0');
+  const minutes = phTime.getMinutes().toString().padStart(2, '0');
+  const seconds = phTime.getSeconds().toString().padStart(2, '0');
+
+  // Create a new date with the exact Philippine time
+  const exactPhTime = new Date(phTime.getFullYear(), phTime.getMonth(), phTime.getDate(),
+    parseInt(hours), parseInt(minutes), parseInt(seconds));
+
+  return exactPhTime;
+};
+
+// WebSocket connection setup
+const setupWebSocket = (courseId: string, onNewScan: () => void) => {
+  // Remove /api from the base URL for WebSocket connection
+  const wsUrl = API_CONFIG.baseURL.replace('/api', '').replace('http', 'ws');
+  console.log('Connecting to WebSocket:', `${wsUrl}/attendance/${courseId}`);
+  
+  const ws = new WebSocket(`${wsUrl}/attendance/${courseId}`);
+
+  ws.onopen = () => {
+    console.log('WebSocket connected successfully');
+  };
+
+  ws.onmessage = (event) => {
+    try {
+    const data = JSON.parse(event.data);
+    if (data.type === 'new_scan') {
+      onNewScan();
+      }
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+    // Attempt to reconnect after 5 seconds
+    setTimeout(() => {
+      console.log('Attempting to reconnect WebSocket...');
+      setupWebSocket(courseId, onNewScan);
+    }, 5000);
+  };
+
+  ws.onclose = () => {
+    console.log('WebSocket connection closed');
+    // Attempt to reconnect after 5 seconds
+    setTimeout(() => {
+      console.log('Attempting to reconnect WebSocket...');
+      setupWebSocket(courseId, onNewScan);
+    }, 5000);
+  };
+
+  return ws;
+};
 
 SplashScreen.preventAutoHideAsync();
 
 export default function LecturerDashboard() {
   const params = useLocalSearchParams();
   const currentUserId = params.id as string;
-  
+
   const [fontsLoaded, fontError] = useFonts({
     'THEDISPLAYFONT': require('../assets/fonts/THEDISPLAYFONT-DEMOVERSION.ttf'),
   });
@@ -24,22 +89,12 @@ export default function LecturerDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-
-  // Add polling for real-time updates
-  useEffect(() => {
-    const pollInterval = setInterval(() => {
-      setRefreshTrigger(prev => prev + 1);
-    }, 30000); // Poll every 30 seconds
-
-    return () => clearInterval(pollInterval);
-  }, []);
 
   useEffect(() => {
     if (currentUserId) {
       fetchAssignedCourses();
     }
-  }, [currentUserId, refreshTrigger]);
+  }, [currentUserId]);
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -56,12 +111,12 @@ export default function LecturerDashboard() {
       const allCourses = await getCourses();
       console.log('Current Lecturer ID:', currentUserId);
       console.log('All Courses:', allCourses);
-      
+
       const assignedCourses = allCourses.filter((course: Course) => {
         console.log('Course Lecturer ID:', course.lecturerId?._id);
         return course.lecturerId?._id === currentUserId;
       });
-      
+
       console.log('Assigned Courses:', assignedCourses);
       setCourses(assignedCourses);
       setError(null);
@@ -87,16 +142,14 @@ export default function LecturerDashboard() {
     router.replace('/');
   };
 
-  // Add refresh function
   const handleRefresh = () => {
-    setRefreshTrigger(prev => prev + 1);
+    fetchAssignedCourses();
   };
 
   const generateQRData = (course: Course) => {
-    const now = new Date();
-    const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Convert to PH time (UTC+8)
+    const phTime = getPhilippineTime();
     const expiryTime = new Date(phTime.getTime() + (60 * 60 * 1000)); // 1 hour from now
-    
+
     return JSON.stringify({
       courseId: course._id,
       courseCode: course.courseCode,
@@ -112,51 +165,40 @@ export default function LecturerDashboard() {
 
   return (
     <View style={styles.container}>
+
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <View style={styles.headerLeft}>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-            <View style={styles.headerTitleContainer}>
-              <Text style={[styles.headerTitle, styles.headerTitleChe]}>CHE</Text>
-              <Text style={[styles.headerTitle, styles.headerTitleQr]}>QR</Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity onPress={handleRefresh} style={styles.refreshButton}>
-              <Ionicons name="refresh" size={24} color="#002147" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-              <Ionicons name="log-out-outline" size={32} color="#002147" />
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>CLASSTRACK</Text>
+            <TouchableOpacity onPress={handleLogout} style={styles.headerLogoutButton}>
+              <Ionicons name="log-out-outline" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
         <Text style={styles.welcomeText}>Lecturer Dashboard</Text>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
             onRefresh={handleRefresh}
-            colors={['#002147']}
-            tintColor="#002147"
+            colors={['#fff']}
+            tintColor="#fff"
           />
         }
       >
         {isLoading ? (
-          <ActivityIndicator size="large" color="#1a73e8" style={styles.loader} />
+          <ActivityIndicator size="large" color="#fff" style={styles.loader} />
         ) : error ? (
           <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle" size={20} color="#fff" style={styles.errorIcon} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         ) : courses.length === 0 ? (
           <View style={styles.emptyState}>
-            <Ionicons name="book-outline" size={48} color="#ccc" />
+            <Ionicons name="book-outline" size={48} color="#fff" />
             <Text style={styles.emptyStateText}>No assigned courses found</Text>
           </View>
         ) : (
@@ -175,13 +217,9 @@ export default function LecturerDashboard() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.confirmModal]}>
-            <View style={styles.confirmHeader}>
-              <Ionicons name="log-out-outline" size={48} color="#002147" />
-              <Text style={styles.confirmTitle}>Confirm Logout</Text>
-            </View>
-            
+            <Text style={styles.confirmTitle}>Logout</Text>
             <Text style={styles.confirmText}>
-              Are you sure you want to logout?
+              Are you sure you want to log out?
             </Text>
 
             <View style={styles.confirmButtons}>
@@ -192,10 +230,10 @@ export default function LecturerDashboard() {
                 <Text style={styles.cancelConfirmText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmButton, styles.logoutConfirmButton]}
+                style={[styles.confirmButton, styles.confirmConfirmButton]}
                 onPress={handleConfirmLogout}
               >
-                <Text style={styles.logoutConfirmText}>Logout</Text>
+                <Text style={styles.confirmConfirmText}>Logout</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -213,11 +251,61 @@ const CourseCard = ({ course }: { course: Course }) => {
   const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
   const [remainingTime, setRemainingTime] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [newScans, setNewScans] = useState(0);
   const qrRef = useRef<any>(null);
-  const countdownInterval = useRef<NodeJS.Timeout>();
+  const countdownInterval = useRef<ReturnType<typeof setInterval>>(null as unknown as ReturnType<typeof setInterval>);
+  const wsRef = useRef<WebSocket | null>(null as WebSocket | null);
+  const setupWebSocket = (courseId: string, onScan: () => void) => {
+    const ws = new WebSocket(`${API_CONFIG.wsURL}/attendance/${courseId}`);
+    ws.onmessage = () => onScan();
+    return ws;
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const lastCheckTime = useRef<Date>(new Date());
+
+  // Setup WebSocket connection
+  useEffect(() => {
+    const handleNewScan = async () => {
+      try {
+        const response = await fetch(`${API_CONFIG.baseURL}/attendance/course/${course._id}`);
+        if (!response.ok) return;
+
+        const records = await response.json();
+        const now = new Date();
+        const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
+        // Count scans in the last 5 minutes
+        const recentScans = records.reduce((count: number, record: any) => {
+          const recordTime = new Date(record.generatedAt);
+          const timeDiff = phTime.getTime() - recordTime.getTime();
+          if (timeDiff <= 5 * 60 * 1000) { // 5 minutes
+            return count + record.scannedBy.length;
+          }
+          return count;
+        }, 0);
+
+        setNewScans(recentScans);
+      } catch (error) {
+        console.error('Error checking new scans:', error);
+      }
+    };
+
+    // Initialize WebSocket connection
+    wsRef.current = setupWebSocket(course._id, handleNewScan);
+
+    // Cleanup WebSocket connection
+    return () => {
+      if (countdownInterval.current) {
+        clearInterval(countdownInterval.current);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [course._id]);
 
   // Check for existing valid QR code
   const checkExistingQRCode = async () => {
@@ -227,7 +315,7 @@ const CourseCard = ({ course }: { course: Course }) => {
         throw new Error('Failed to fetch attendance records');
       }
       const records = await response.json();
-      
+
       // Find the most recent valid QR code
       const now = new Date();
       const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Current PH time
@@ -256,10 +344,12 @@ const CourseCard = ({ course }: { course: Course }) => {
         const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // Current PH time
         const expiryTime = new Date(qrData.expiresAt);
         const diffInMinutes = Math.floor((expiryTime.getTime() - phTime.getTime()) / (1000 * 60));
-        
+
         if (diffInMinutes <= 0) {
           setRemainingTime('expired');
-          clearInterval(countdownInterval.current);
+          if (countdownInterval.current) {
+            clearInterval(countdownInterval.current);
+          }
           setShowQRModal(false);
           setQRData(null);
         } else {
@@ -314,32 +404,93 @@ const CourseCard = ({ course }: { course: Course }) => {
   const handleGenerateQR = async () => {
     const hasValidQR = await checkExistingQRCode();
     if (!hasValidQR) {
-      setShowConfirmModal(true);
-    }
-  };
-
-  const handleConfirmGenerateQR = async () => {
-    setShowConfirmModal(false);
     const newQRData = await generateQRData();
     if (newQRData) {
       setQRData(newQRData);
+        setShowQRModal(true);
+      }
+    } else {
       setShowQRModal(true);
     }
   };
 
+  // Check for new scans
+  useEffect(() => {
+    const checkNewScans = async () => {
+      try {
+        const response = await fetch(`${API_CONFIG.baseURL}/attendance/course/${course._id}`);
+        if (!response.ok) return;
+
+        const records = await response.json();
+        const now = new Date();
+        const phTime = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+
+        // Get the most recent record
+        const mostRecentRecord = records.sort((a: any, b: any) =>
+          new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
+        )[0];
+
+        if (mostRecentRecord) {
+          const recordTime = new Date(mostRecentRecord.generatedAt);
+          const timeDiff = phTime.getTime() - recordTime.getTime();
+
+          // If the record is from the last 5 minutes
+          if (timeDiff <= 5 * 60 * 1000) {
+            const scanCount = mostRecentRecord.scannedBy.length;
+            if (scanCount > newScans) {
+              setNewScans(scanCount);
+              // Vibrate or play sound to notify
+              if (Platform.OS === 'android') {
+                Vibration.vibrate(500);
+              }
+            }
+          } else {
+            setNewScans(0);
+          }
+        }
+
+        lastCheckTime.current = now;
+      } catch (error) {
+        console.error('Error checking new scans:', error);
+      }
+    };
+
+    // Check every 3 seconds
+    const interval = setInterval(checkNewScans, 3000);
+    return () => clearInterval(interval);
+  }, [course._id]);
+
+  // Reset new scans count when viewing attendance
+  const handleGenerateReports = () => {
+    if (!course.lecturerId) {
+      console.error('Lecturer ID not found');
+      return;
+    }
+
+    router.push({
+      pathname: '/course-reports',
+      params: {
+        courseId: course._id,
+        courseName: course.courseName,
+        lecturerId: course.lecturerId._id
+      }
+    });
+  };
+
   const handleViewAttendance = async () => {
+    setNewScans(0);
     try {
       const response = await fetch(`${API_CONFIG.baseURL}/attendance/course/${course._id}`);
       if (!response.ok) {
         throw new Error('Failed to fetch attendance records');
       }
       const records = await response.json();
-      
+
       // Sort records by generation time (most recent first)
-      const sortedRecords = records.sort((a: any, b: any) => 
+      const sortedRecords = records.sort((a: any, b: any) =>
         new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
       );
-      
+
       setAttendanceRecords(sortedRecords);
       setShowAttendanceModal(true);
     } catch (error) {
@@ -352,7 +503,7 @@ const CourseCard = ({ course }: { course: Course }) => {
     try {
       // Request permission to access media library
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      
+
       if (status !== 'granted') {
         Alert.alert('Permission Denied', 'Please grant permission to save QR code to your gallery.');
         return;
@@ -362,7 +513,7 @@ const CourseCard = ({ course }: { course: Course }) => {
         const uri = await qrRef.current.capture();
         const asset = await MediaLibrary.createAssetAsync(uri);
         await MediaLibrary.createAlbumAsync('CHEQR', asset, false);
-        
+
         Alert.alert('Success', 'QR code saved to gallery successfully!');
       }
     } catch (error) {
@@ -387,96 +538,58 @@ const CourseCard = ({ course }: { course: Course }) => {
 
   return (
     <View style={styles.courseCard}>
-      <View style={styles.courseImageContainer}>
-        <Image
-          source={require('../assets/images/c_image.jpg')}
-          style={styles.courseImage}
-        />
-        <View style={styles.courseOverlay}>
-          <View style={styles.courseActions}>
-            <TouchableOpacity 
-              style={styles.courseActionButton}
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderContent}>
+          <View style={styles.courseInfo}>
+            <Text style={styles.courseCode}>{course.courseCode}</Text>
+            <Text style={styles.courseTitle}>{course.courseName}</Text>
+          </View>
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.iconButton}
               onPress={handleGenerateQR}
-              disabled={isLoading}
             >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFD700" />
-              ) : (
-                <Ionicons name="qr-code-outline" size={24} color="#FFD700" />
-              )}
+              <Ionicons name="qr-code-outline" size={24} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.courseActionButton}
+
+            <TouchableOpacity
+              style={styles.iconButton}
               onPress={handleViewAttendance}
             >
-              <Ionicons name="people-outline" size={24} color="#FFD700" />
+              <Ionicons name="list-outline" size={24} color="#fff" />
+              {newScans > 0 && (
+                <View style={styles.notificationBadge}>
+                  <Text style={styles.notificationText}>{newScans}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleGenerateReports}
+            >
+              <Ionicons name="document-text-outline" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
       </View>
-      <View style={styles.courseContent}>
-        <View style={styles.courseHeader}>
-          <View style={styles.courseTitleContainer}>
-            <Text style={styles.courseCode}>{course.courseCode}</Text>
-            <Text style={styles.courseTitle} numberOfLines={1}>{course.courseName}</Text>
+
+      <View style={styles.cardBody}>
+        <View style={styles.scheduleSection}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="calendar-outline" size={18} color="#2E3192" />
+            <Text style={styles.sectionTitle}>Schedule</Text>
           </View>
-          <View style={styles.studentCount}>
-            <Ionicons name="people" size={16} color="#666" />
-            <Text style={styles.studentCountText}>{course.students?.length || 0}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.schedulesContainer}>
+          <View style={styles.scheduleGrid}>
           {course.schedules.map((schedule, index) => (
-            <View key={index} style={styles.scheduleCard}>
-              <View style={styles.scheduleHeader}>
-                <Ionicons name="calendar" size={16} color="#002147" />
+              <View key={index} style={styles.scheduleItem}>
                 <Text style={styles.scheduleDays}>{schedule.days.join(', ')}</Text>
-              </View>
-              <View style={styles.scheduleTime}>
-                <Ionicons name="time" size={16} color="#002147" />
-                <Text style={styles.timeText}>{schedule.startTime} - {schedule.endTime}</Text>
-              </View>
+                <Text style={styles.scheduleTime}>{schedule.startTime} - {schedule.endTime}</Text>
             </View>
           ))}
         </View>
       </View>
-
-      {/* QR Code Generation Confirmation Modal */}
-      <Modal
-        visible={showConfirmModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowConfirmModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.confirmModal]}>
-            <View style={styles.confirmHeader}>
-              <Ionicons name="qr-code-outline" size={48} color="#002147" />
-              <Text style={styles.confirmTitle}>Generate QR Code</Text>
             </View>
-            
-            <Text style={styles.confirmText}>
-              This will generate a QR code for attendance that will expire in 1 hour. Are you sure you want to proceed?
-            </Text>
-
-            <View style={styles.confirmButtons}>
-              <TouchableOpacity
-                style={[styles.confirmButton, styles.cancelConfirmButton]}
-                onPress={() => setShowConfirmModal(false)}
-              >
-                <Text style={styles.cancelConfirmText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmButton, styles.confirmGenerateButton]}
-                onPress={handleConfirmGenerateQR}
-              >
-                <Text style={styles.confirmGenerateText}>Generate</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
       {/* QR Code Modal */}
       <Modal
@@ -488,31 +601,55 @@ const CourseCard = ({ course }: { course: Course }) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
               <Text style={styles.modalTitle}>Course QR Code</Text>
+                <Text style={styles.courseSubtitle}>{course.courseName}</Text>
+                {/* Course code and section */}
+                <Text style={styles.qrDetailText}>Course Code: <Text style={{fontWeight:'bold'}}>{course.courseCode}</Text></Text>
+                {/* Lecturer name */}
+                {course.lecturerId && (
+                  <Text style={styles.qrDetailText}>
+                    Lecturer: <Text style={{fontWeight:'bold'}}>{course.lecturerId.firstName} {course.lecturerId.lastName}</Text>
+                  </Text>
+                )}
+              </View>
               <TouchableOpacity onPress={() => setShowQRModal(false)}>
-                <Ionicons name="close" size={24} color="#002147" />
+                <Ionicons name="close" size={24} color="#2E3192" />
               </TouchableOpacity>
             </View>
+
+            {/* QR Code and status */}
+            <View style={{alignItems:'center', marginBottom:16}}>
             <ViewShot ref={qrRef} style={styles.qrContainer}>
               {qrData && (
                 <QRCode
                   value={qrData.data}
-                  size={200}
-                  color="#002147"
+                    size={250}
+                    color="#2E3192"
                   backgroundColor="white"
                 />
               )}
             </ViewShot>
-            <Text style={styles.qrInfo}>
-              This QR code will expire in {remainingTime}
+              {/* Status indicator */}
+              <View style={{flexDirection:'row', alignItems:'center', marginTop:8}}>
+                <View style={{width:10, height:10, borderRadius:5, backgroundColor: remainingTime !== 'expired' ? '#4CAF50' : '#F44336', marginRight:6}} />
+                <Text style={{color: remainingTime !== 'expired' ? '#4CAF50' : '#F44336', fontWeight:'bold'}}>
+                  {remainingTime !== 'expired' ? 'Active' : 'Expired'}
             </Text>
-            <TouchableOpacity 
-              style={styles.saveButton}
-              onPress={handleSaveQRCode}
-            >
-              <Ionicons name="save-outline" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save to Gallery</Text>
-            </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* QR Info: Generation, Expiry, Session ID */}
+            <View style={styles.qrInfoContainer}>
+              {qrData && (
+                <View style={styles.qrInfoItem}>
+                  <Text style={styles.qrStatusText}>Active</Text>
+                  <Text style={styles.qrExpiryText}>
+                    Expires in {remainingTime}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </Modal>
@@ -533,14 +670,14 @@ const CourseCard = ({ course }: { course: Course }) => {
               </View>
               <View style={styles.modalActions}>
                 <TouchableOpacity onPress={handleFullScreen} style={styles.fullScreenButton}>
-                  <Ionicons 
-                    name={isFullScreen ? "contract-outline" : "expand-outline"} 
-                    size={24} 
-                    color="#002147" 
+                  <Ionicons
+                    name={isFullScreen ? "contract-outline" : "expand-outline"}
+                    size={24}
+                    color="#2E3192"
                   />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setShowAttendanceModal(false)}>
-                  <Ionicons name="close" size={24} color="#002147" />
+                  <Ionicons name="close" size={24} color="#2E3192" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -555,7 +692,7 @@ const CourseCard = ({ course }: { course: Course }) => {
                 placeholderTextColor="#999"
               />
               {searchQuery ? (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setSearchQuery('')}
                   style={styles.clearSearchButton}
                 >
@@ -607,6 +744,7 @@ const CourseCard = ({ course }: { course: Course }) => {
                   .map((record, index) => (
                     <View key={index} style={styles.attendanceSession}>
                       <View style={styles.sessionHeader}>
+                        <View style={styles.sessionHeaderContent}>
                         <Text style={styles.sessionDate}>
                           {new Date(record.generatedAt).toLocaleDateString('en-US', {
                             weekday: 'long',
@@ -622,6 +760,7 @@ const CourseCard = ({ course }: { course: Course }) => {
                           })}
                         </Text>
                       </View>
+                      </View>
                       <View style={styles.studentsList}>
                         {record.scannedBy.map((scan: any, scanIndex: number) => (
                           <View key={scanIndex} style={styles.studentItem}>
@@ -633,12 +772,15 @@ const CourseCard = ({ course }: { course: Course }) => {
                                 ID: {scan.studentId.idNumber}
                               </Text>
                             </View>
-                            <Text style={styles.scanTime}>
-                              {new Date(scan.scannedAt).toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </Text>
+                            <View style={styles.scanTimeContainer}>
+                              <Ionicons name="checkmark-circle" size={16} color="#4CAF50" style={styles.checkmarkIcon} />
+                              <Text style={styles.scanTime}>
+                                {new Date(scan.scannedAt).toLocaleTimeString('en-US', {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </Text>
+                            </View>
                           </View>
                         ))}
                       </View>
@@ -653,61 +795,40 @@ const CourseCard = ({ course }: { course: Course }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create<any>({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#000',
   },
   header: {
-    backgroundColor: 'transparent',
     padding: 20,
-    paddingTop: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    paddingTop: 40,
   },
   headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoImage: {
-    width: 50,
-    height: 50,
-    marginRight: 10,
+    alignItems: 'flex-end',
+    marginBottom: 16,
+    paddingHorizontal: 20,
   },
   headerTitleContainer: {
-    flexDirection: 'row',
     alignItems: 'center',
+    minWidth: 150,
   },
   headerTitle: {
-    fontSize: 75,
-    marginTop: 10,
-    lineHeight: 75,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  headerTitleChe: {
-    color: '#002147',
+    fontSize: 28,
+    fontWeight: 'bold',
     fontFamily: 'THEDISPLAYFONT',
-  },
-  headerTitleQr: {
-    color: '#FFD700',
-    fontFamily: 'THEDISPLAYFONT',
+    color: '#fff',
+    letterSpacing: 1,
   },
   welcomeText: {
     fontSize: 18,
-    color: '#002147',
+    color: '#fff',
+    marginTop: 10,
     opacity: 0.9,
-    fontWeight: 'bold',
   },
-  logoutButton: {
+  headerLogoutButton: {
     padding: 8,
-    marginLeft: 10,
+    marginTop: 8,
   },
   content: {
     flex: 1,
@@ -717,134 +838,30 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   errorContainer: {
-    backgroundColor: '#FFEBEE',
-    padding: 10,
-    borderRadius: 5,
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  errorIcon: {
+    marginRight: 10,
   },
   errorText: {
-    color: '#D32F2F',
-    fontSize: 14,
+    color: '#fff',
+    fontSize: 16,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
-    marginTop: 20,
+    padding: 40,
   },
   emptyStateText: {
     fontSize: 16,
-    color: '#666',
+    color: '#fff',
+    textAlign: 'center',
     marginTop: 10,
-  },
-  courseCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 12,
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  courseImageContainer: {
-    height: 80,
-    position: 'relative',
-  },
-  courseImage: {
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
-    top: 0,
-  },
-  courseOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 33, 71, 0.7)',
-    justifyContent: 'flex-end',
-    padding: 12,
-  },
-  courseActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  courseActionButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  courseContent: {
-    padding: 12,
-  },
-  courseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  courseTitleContainer: {
-    flex: 1,
-    marginRight: 12,
-  },
-  courseCode: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#002147',
-    marginBottom: 2,
-  },
-  courseTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1a73e8',
-    lineHeight: 20,
-  },
-  studentCount: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  studentCountText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-  },
-  schedulesContainer: {
-    gap: 8,
-  },
-  scheduleCard: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 10,
-  },
-  scheduleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    gap: 6,
-  },
-  scheduleDays: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#002147',
-  },
-  scheduleTime: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  timeText: {
-    fontSize: 12,
-    color: '#666',
   },
   modalOverlay: {
     flex: 1,
@@ -853,76 +870,184 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#000',
     borderRadius: 20,
-    padding: 25,
+    padding: 20,
     width: '90%',
     maxWidth: 400,
   },
   confirmModal: {
-    width: '90%',
-    maxWidth: 400,
-    padding: 24,
+    alignItems: 'center',
   },
   confirmHeader: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   confirmTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#002147',
-    marginTop: 8,
+    color: '#fff',
+    marginBottom: 16,
   },
   confirmText: {
     fontSize: 16,
-    color: '#666',
+    color: '#fff',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   confirmButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
   },
   confirmButton: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 8,
+    borderRadius: 12,
+    marginHorizontal: 5,
   },
   cancelConfirmButton: {
-    backgroundColor: '#f8f9fa',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#111',
   },
-  logoutConfirmButton: {
-    backgroundColor: '#002147',
+  confirmConfirmButton: {
+    backgroundColor: '#fff',
   },
   cancelConfirmText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  logoutConfirmText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+    textAlign: 'center',
   },
-  qrContainer: {
-    padding: 20,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    marginVertical: 20,
+  confirmConfirmText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  courseCard: {
+    marginBottom: 20,
+    borderRadius: 16,
+    backgroundColor: '#111',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    padding: 16,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    backgroundColor: '#111',
+  },
+  cardHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  courseInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  courseCode: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  courseTitle: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 16,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: 12,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  qrInfo: {
-    fontSize: 14,
-    color: '#666',
+  generateQRButton: {
+    flex: 1,
+  },
+  viewAttendanceButton: {
+    flex: 1,
+  },
+  reportsButton: {
+    flex: 1,
+  },
+  actionButtonText: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 6,
     textAlign: 'center',
-    marginTop: 10,
+  },
+  cardBody: {
+    backgroundColor: '#111',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    padding: 20,
+  },
+  scheduleSection: {
+    gap: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  scheduleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginLeft: 26,
+  },
+  scheduleItem: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    minWidth: '48%',
+  },
+  scheduleDays: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  scheduleTime: {
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '500',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -930,15 +1055,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#fff',
+    borderBottomColor: '#333',
+    backgroundColor: '#000',
   },
   modalTitleContainer: {
     flex: 1,
   },
   courseSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: '#999',
     marginTop: 4,
   },
   modalActions: {
@@ -952,44 +1077,52 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#111',
     margin: 16,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    height: 48,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 12,
+    color: '#fff',
   },
   searchInput: {
     flex: 1,
-    height: 40,
+    height: 48,
     fontSize: 16,
-    color: '#333',
+    color: '#fff',
   },
   clearSearchButton: {
-    padding: 4,
+    padding: 8,
   },
   sessionTabs: {
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#fff',
+    borderBottomColor: '#333',
+    backgroundColor: '#000',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   sessionTab: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginHorizontal: 4,
+    borderRadius: 20,
   },
   selectedSessionTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#002147',
+    backgroundColor: '#fff',
   },
   sessionTabText: {
     fontSize: 14,
-    color: '#666',
+    color: '#999',
   },
   selectedSessionTabText: {
-    color: '#002147',
+    color: '#000',
     fontWeight: '600',
   },
   attendanceList: {
@@ -998,114 +1131,159 @@ const styles = StyleSheet.create({
   },
   noAttendanceText: {
     fontSize: 16,
-    color: '#666',
-    marginTop: 16,
+    color: '#fff',
+    marginTop: 24,
     textAlign: 'center',
-  },
-  attendanceSession: {
-    marginBottom: 20,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 15,
-  },
-  sessionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  sessionDate: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#002147',
-  },
-  sessionTime: {
-    fontSize: 14,
-    color: '#666',
-  },
-  studentsList: {
-    marginTop: 5,
   },
   studentItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    marginBottom: 8,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   studentInfo: {
     flex: 1,
   },
   studentName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#002147',
+    color: '#fff',
+    fontWeight: '500',
   },
   studentId: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    color: '#999',
+    marginTop: 4,
+  },
+  scanTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  checkmarkIcon: {
+    marginRight: 6,
   },
   scanTime: {
     fontSize: 14,
-    color: '#666',
-    marginLeft: 10,
+    color: '#999',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: 12,
+  },
+  iconButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   fullScreenModal: {
-    backgroundColor: '#fff',
+    flex: 1,
+    backgroundColor: '#000',
   },
   fullScreenContent: {
-    width: '100%',
-    height: '100%',
-    maxWidth: '100%',
-    borderRadius: 0,
-    padding: 0,
+    flex: 1,
+    padding: 20,
+    paddingTop: 40,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#002147',
+    color: '#fff',
+    marginBottom: 20,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  notificationText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  qrContainer: {
+    alignItems: 'center',
+    backgroundColor: '#111',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  qrInfoContainer: {
+    width: '100%',
+    marginTop: 16,
+  },
+  qrInfoItem: {
+    marginBottom: 12,
+  },
+  qrStatusText: {
+    fontSize: 16,
+    color: '#4CAF50',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  qrExpiryText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
   },
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#002147',
+    backgroundColor: '#333',
     padding: 12,
     borderRadius: 8,
+    alignItems: 'center',
     marginTop: 16,
-    gap: 8,
   },
   saveButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  confirmGenerateButton: {
-    backgroundColor: '#002147',
+  qrDetailText: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 8,
   },
-  confirmGenerateText: {
-    color: '#fff',
+  attendanceSession: {
+    marginBottom: 24,
+    backgroundColor: '#111',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sessionHeader: {
+    padding: 16,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    backgroundColor: '#222',
+  },
+  sessionHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionDate: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#fff',
   },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  sessionTime: {
+    fontSize: 14,
+    color: '#999',
+    backgroundColor: '#333',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
-  refreshButton: {
-    padding: 8,
+  studentsList: {
+    padding: 16,
   },
 }); 

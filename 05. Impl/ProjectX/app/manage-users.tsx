@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, TextInput, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Animated, PanResponder, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, TextInput, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Animated, PanResponder, Dimensions, ViewStyle } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
@@ -7,8 +7,16 @@ import * as SplashScreen from 'expo-splash-screen';
 import { User, getUsers, createUser, updateUser, deleteUser } from '../lib/api';
 import { API_CONFIG } from '../config';
 import Alert from './components/Alert';
+import { LinearGradient } from 'expo-linear-gradient';
 
 SplashScreen.preventAutoHideAsync();
+
+// Add this type before the RoleCard component
+type RoleIconContainerStyle = {
+  adminIconContainer: ViewStyle;
+  lecturerIconContainer: ViewStyle;
+  studentIconContainer: ViewStyle;
+};
 
 // Role card component
 interface RoleCardProps {
@@ -24,16 +32,22 @@ const RoleCard: React.FC<RoleCardProps> = ({ role, count, onPress, iconName }) =
     onPress={onPress}
     activeOpacity={0.9}
   >
-    <View style={styles.roleCardContent}>
-      <View style={[styles.roleIconContainer, styles[`${role}IconContainer`]]}>
-        <Ionicons name={iconName} size={32} color="#1a73e8" />
+    <LinearGradient
+      colors={['#FFFFFF', '#F8F8F8']}
+      style={styles.cardGradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+    >
+      <View style={styles.cardHeader}>
+        <View style={styles.cardTitleContainer}>
+          <Text style={styles.cardTitle}>{role.charAt(0).toUpperCase() + role.slice(1)}s</Text>
+          <Text style={styles.cardSubtitle}>{count} {count === 1 ? 'user' : 'users'}</Text>
+        </View>
       </View>
-      <View style={styles.roleInfo}>
-        <Text style={styles.roleTitle}>{role.charAt(0).toUpperCase() + role.slice(1)}s</Text>
-        <Text style={styles.roleCount}>{count} {count === 1 ? 'user' : 'users'}</Text>
+      <View style={styles.cardFooter}>
+        <Text style={styles.cardAction}>View Details</Text>
       </View>
-      <Ionicons name="chevron-forward" size={24} color="#1a73e8" style={styles.roleArrow} />
-    </View>
+    </LinearGradient>
   </TouchableOpacity>
 );
 
@@ -47,7 +61,7 @@ interface UserListModalProps {
   role: string;
 }
 
-const UserListModal: React.FC<UserListModalProps> = ({ visible, onClose, users, onEdit, onDelete, role }) => {
+const UserListDrawer: React.FC<UserListModalProps> = ({ visible, onClose, users, onEdit, onDelete, role }) => {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -55,6 +69,45 @@ const UserListModal: React.FC<UserListModalProps> = ({ visible, onClose, users, 
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [usersPerPage] = useState(50);
+  const [drawerHeight] = useState(new Animated.Value(0));
+  const screenHeight = Dimensions.get('window').height;
+
+  const panResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gestureState) => {
+      return Math.abs(gestureState.dy) > 5;
+    },
+    onPanResponderMove: (_, gestureState) => {
+      if (gestureState.dy > 0) { // Only allow dragging down
+        drawerHeight.setValue(gestureState.dy);
+      }
+    },
+    onPanResponderRelease: (_, gestureState) => {
+      if (gestureState.dy > 100) {
+        onClose();
+      } else {
+        Animated.spring(drawerHeight, {
+          toValue: 0,
+          useNativeDriver: false,
+        }).start();
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (visible) {
+      Animated.spring(drawerHeight, {
+        toValue: screenHeight * 0.9,
+        useNativeDriver: false,
+      }).start();
+    } else {
+      Animated.timing(drawerHeight, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    }
+  }, [visible]);
 
   // Filter users based on search
   const filteredUsers = users.filter(user =>
@@ -110,101 +163,125 @@ const UserListModal: React.FC<UserListModalProps> = ({ visible, onClose, users, 
 
   return (
     <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="slide"
-        onRequestClose={onClose}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.userListModalContent]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{role} Users</Text>
-              <TouchableOpacity onPress={onClose}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#666" />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by ID, name, or email..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={20} color="#666" />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            <View style={styles.userStats}>
-              <Text style={styles.statsText}>
-                Showing {indexOfFirstUser + 1}-{Math.min(indexOfLastUser, filteredUsers.length)} of {filteredUsers.length} users
-              </Text>
-            </View>
-            
-            {error && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            <ScrollView style={styles.userList}>
-              {currentUsers.map((user, index) => (
-                <View key={`${role}-${user._id || `temp-${index}`}`} style={styles.userCard}>
-                  <View style={styles.userInfo}>
-                    <Text style={styles.userId}>{user.idNumber}</Text>
-                    <Text style={styles.userName}>{user.lastName}, {user.firstName}</Text>
-                    <Text style={styles.userEmail}>{user.email}</Text>
-                  </View>
-                  <View style={styles.userActions}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => onEdit(user)}
-                    >
-                      <Ionicons name="pencil" size={20} color="#4CAF50" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionButton, isDeleting === user._id && styles.disabledButton]}
-                      onPress={() => handleDeleteClick(user)}
-                      disabled={isDeleting === user._id}
-                    >
-                      {isDeleting === user._id ? (
-                        <ActivityIndicator size="small" color="#F44336" />
-                      ) : (
-                        <Ionicons name="trash" size={20} color="#F44336" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
+      {visible && (
+        <View style={styles.drawerOverlay}>
+          <TouchableOpacity
+            style={styles.drawerBackdrop}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+          <Animated.View
+            style={[
+              styles.drawer,
+              {
+                height: drawerHeight,
+              },
+            ]}
+          >
+            <View style={styles.drawerHeader} {...panResponder.panHandlers}>
+              <View style={styles.drawerHandle} />
+              <View style={styles.modalTitleContainer}>
+                <View style={styles.modalIconContainer}>
+                  <Ionicons 
+                    name={
+                      role === 'admin' ? 'shield-checkmark' :
+                      role === 'lecturer' ? 'school' : 'people'
+                    } 
+                    size={24} 
+                    color="#FFFFFF" 
+                  />
                 </View>
-              ))}
-            </ScrollView>
-
-            <View style={styles.paginationContainer}>
-              <TouchableOpacity
-                style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
-                onPress={handlePrevPage}
-                disabled={currentPage === 1}
-              >
-                <Ionicons name="chevron-back" size={20} color={currentPage === 1 ? "#ccc" : "#666"} />
-              </TouchableOpacity>
-              <Text style={styles.paginationText}>
-                Page {currentPage} of {totalPages}
-              </Text>
-              <TouchableOpacity
-                style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
-                onPress={handleNextPage}
-                disabled={currentPage === totalPages}
-              >
-                <Ionicons name="chevron-forward" size={20} color={currentPage === totalPages ? "#ccc" : "#666"} />
+                <Text style={styles.drawerTitle}>{role.charAt(0).toUpperCase() + role.slice(1)} Users</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+                <Ionicons name="add" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
-          </View>
+
+            <View style={styles.drawerContent}>
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#FFFFFF" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search by ID, name, or email..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                />
+                {searchQuery ? (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={20} color="#FFFFFF" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+
+              <View style={styles.userStats}>
+                <Text style={styles.statsText}>
+                  Showing {indexOfFirstUser + 1}-{Math.min(indexOfLastUser, filteredUsers.length)} of {filteredUsers.length} users
+                </Text>
+              </View>
+              
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={20} color="#D32F2F" style={styles.errorIcon} />
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              <ScrollView style={styles.userList}>
+                {currentUsers.map((user, index) => (
+                  <View key={`${role}-${user._id || `temp-${index}`}`} style={styles.userCard}>
+                    <View style={styles.userInfo}>
+                      <Text style={styles.userId}>{user.idNumber}</Text>
+                      <Text style={styles.userName}>{user.lastName}, {user.firstName}</Text>
+                      <Text style={styles.userEmail}>{user.email}</Text>
+                    </View>
+                    <View style={styles.userActions}>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.editButton]}
+                        onPress={() => onEdit(user)}
+                      >
+                        <Ionicons name="pencil" size={20} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.deleteButton, isDeleting === user._id && styles.disabledButton]}
+                        onPress={() => handleDeleteClick(user)}
+                        disabled={isDeleting === user._id}
+                      >
+                        {isDeleting === user._id ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Ionicons name="trash" size={20} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+
+              <View style={styles.paginationContainer}>
+                <TouchableOpacity
+                  style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
+                  onPress={handlePrevPage}
+                  disabled={currentPage === 1}
+                >
+                  <Ionicons name="chevron-back" size={20} color={currentPage === 1 ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF"} />
+                </TouchableOpacity>
+                <Text style={styles.paginationText}>
+                  Page {currentPage} of {totalPages}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
+                  onPress={handleNextPage}
+                  disabled={currentPage === totalPages}
+                >
+                  <Ionicons name="chevron-forward" size={20} color={currentPage === totalPages ? "rgba(255, 255, 255, 0.3)" : "#FFFFFF"} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Animated.View>
         </View>
-      </Modal>
+      )}
 
       {/* Delete Confirmation Modal */}
       <Modal
@@ -215,6 +292,9 @@ const UserListModal: React.FC<UserListModalProps> = ({ visible, onClose, users, 
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalContent}>
+            <View style={styles.confirmModalIconContainer}>
+              <Ionicons name="warning" size={32} color="#FFFFFF" />
+            </View>
             <Text style={styles.confirmModalTitle}>Confirm Delete</Text>
             <Text style={styles.confirmModalText}>
               Are you sure you want to delete {userToDelete?.firstName} {userToDelete?.lastName}?
@@ -235,7 +315,7 @@ const UserListModal: React.FC<UserListModalProps> = ({ visible, onClose, users, 
                 disabled={isDeleting === userToDelete?._id}
               >
                 {isDeleting === userToDelete?._id ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.deleteButtonText}>Delete</Text>
                 )}
@@ -272,6 +352,7 @@ export default function ManageUsers() {
     lastName: '',
     email: '',
     username: '',
+    password: '',
     role: 'student',
   });
   const [alert, setAlert] = useState<{
@@ -332,6 +413,7 @@ export default function ManageUsers() {
         lastName: '',
         email: '',
         username: '',
+        password: '',
         role: 'student',
       });
       setSelectedUser(null);
@@ -365,6 +447,7 @@ export default function ManageUsers() {
       lastName: '',
       email: '',
       username: '',
+      password: '',
       role: 'student',
     });
     openDrawer();
@@ -381,6 +464,7 @@ export default function ManageUsers() {
         lastName: user.lastName,
         email: user.email,
         username: user.username,
+        password: '',
         role: user.role,
       });
       
@@ -414,35 +498,14 @@ export default function ManageUsers() {
       setIsLoading(true);
       setError(null);
 
-      // Debug log to check form data
-      console.log('Form Data:', formData);
-
       // Validate required fields
-      if (!formData.firstName || !formData.lastName || !formData.email || !formData.username || !formData.role) {
-        console.log('Validation failed:', {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          username: formData.username,
-          role: formData.role
-        });
+      if (!formData.idNumber || !formData.firstName || !formData.lastName || 
+          !formData.email || !formData.username || !formData.password || !formData.role) {
         setAlert({
           visible: true,
-          title: 'Missing Information',
+          title: 'Missing Fields',
           message: 'Please fill in all required fields',
-          type: 'warning'
-        });
-        return;
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(formData.email)) {
-        setAlert({
-          visible: true,
-          title: 'Invalid Email',
-          message: 'Please enter a valid email address',
-          type: 'warning'
+          type: 'error'
         });
         return;
       }
@@ -477,9 +540,6 @@ export default function ManageUsers() {
         return;
       }
 
-      // Generate a random password
-      const generatedPassword = Math.random().toString(36).slice(-8);
-
       if (selectedUser) {
         // Update existing user
         const updatedUser = await updateUser(selectedUser._id, {
@@ -499,10 +559,9 @@ export default function ManageUsers() {
           type: 'success'
         });
       } else {
-        // Create new user with generated password
+        // Create new user with provided password
         const newUser = await createUser({
           ...formData,
-          password: generatedPassword,
         });
         setUsers([...users, newUser]);
 
@@ -516,7 +575,7 @@ export default function ManageUsers() {
             body: JSON.stringify({
               email: formData.email,
               username: formData.username,
-              password: generatedPassword,
+              password: formData.password,
               role: formData.role,
               firstName: formData.firstName,
             }),
@@ -546,6 +605,7 @@ export default function ManageUsers() {
         lastName: '',
         email: '',
         username: '',
+        password: '',
         role: 'student',
       });
     } catch (error) {
@@ -589,7 +649,7 @@ export default function ManageUsers() {
           {selectedUser ? 'Edit User' : 'Add New User'}
         </Text>
         <TouchableOpacity onPress={closeDrawer} style={styles.closeButton}>
-          <Ionicons name="close" size={24} color="#002147" />
+          <Ionicons name="close" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </View>
 
@@ -600,13 +660,15 @@ export default function ManageUsers() {
       >
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="person-circle-outline" size={24} color="#1a73e8" />
+            <View style={styles.sectionIconContainer}>
+              <Ionicons name="person-circle-outline" size={24} color="#FFFFFF" />
+            </View>
             <Text style={styles.sectionTitle}>Personal Information</Text>
           </View>
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>ID Number</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="card-outline" size={20} color="#666" style={styles.inputIcon} />
+              <Ionicons name="card-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={formData.idNumber}
@@ -621,7 +683,7 @@ export default function ManageUsers() {
             <View style={[styles.inputContainer, { flex: 1, marginRight: 8 }]}>
               <Text style={styles.inputLabel}>First Name</Text>
               <View style={styles.inputWrapper}>
-                <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+                <Ionicons name="person-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   value={formData.firstName}
@@ -634,7 +696,7 @@ export default function ManageUsers() {
             <View style={[styles.inputContainer, { flex: 1, marginLeft: 8 }]}>
               <Text style={styles.inputLabel}>Last Name</Text>
               <View style={styles.inputWrapper}>
-                <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+                <Ionicons name="person-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   value={formData.lastName}
@@ -649,13 +711,15 @@ export default function ManageUsers() {
 
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="lock-closed-outline" size={24} color="#1a73e8" />
+            <View style={styles.sectionIconContainer}>
+              <Ionicons name="lock-closed-outline" size={24} color="#FFFFFF" />
+            </View>
             <Text style={styles.sectionTitle}>Account Information</Text>
           </View>
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Email</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+              <Ionicons name="mail-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={formData.email}
@@ -671,7 +735,7 @@ export default function ManageUsers() {
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Username</Text>
             <View style={styles.inputWrapper}>
-              <Ionicons name="at-outline" size={20} color="#666" style={styles.inputIcon} />
+              <Ionicons name="at-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={formData.username}
@@ -682,15 +746,30 @@ export default function ManageUsers() {
               />
             </View>
           </View>
+
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="lock-closed-outline" size={20} color="#FFFFFF" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                value={formData.password}
+                onChangeText={(text) => setFormData({ ...formData, password: text })}
+                placeholder="Enter password"
+                placeholderTextColor="#999"
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
         </View>
 
         <View style={styles.formSection}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="shield-outline" size={24} color="#1a73e8" />
             <Text style={styles.sectionTitle}>Role</Text>
           </View>
-          <View style={styles.roleContainer}>
-            {['student', 'lecturer', 'admin'].map((role) => (
+          <View style={styles.roleButtons}>
+            {['admin', 'lecturer', 'student'].map((role) => (
               <TouchableOpacity
                 key={role}
                 style={[
@@ -699,26 +778,11 @@ export default function ManageUsers() {
                 ]}
                 onPress={() => setFormData({ ...formData, role })}
               >
-                <View style={[
-                  styles.roleIconContainer,
-                  formData.role === role && styles.roleIconContainerSelected
+                <Text style={[
+                  styles.roleButtonText,
+                  formData.role === role && styles.roleButtonTextSelected
                 ]}>
-                  <Ionicons
-                    name={
-                      role === 'admin' ? 'shield-checkmark' :
-                      role === 'lecturer' ? 'school' : 'people'
-                    }
-                    size={24}
-                    color={formData.role === role ? '#fff' : '#666'}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.roleButtonText,
-                    formData.role === role && styles.roleButtonTextSelected,
-                  ]}
-                >
-                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                  {role === 'lecturer' ? 'Instructor' : role.charAt(0).toUpperCase() + role.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -758,34 +822,34 @@ export default function ManageUsers() {
 
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={['#000000', '#000000']}
+        style={styles.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={32} color="#002147" />
+            <TouchableOpacity onPress={() => router.push('/admin-dashboard')} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={28} color="#FFFFFF" />
             </TouchableOpacity>
-            <Image
-              source={require('../assets/images/logo.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-            />
-            <View style={styles.headerTitleContainer}>
-              <Text style={[styles.headerTitle, styles.headerTitleChe]}>CHE</Text>
-              <Text style={[styles.headerTitle, styles.headerTitleQr]}>QR</Text>
-            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.appName}>CoreTrack</Text>
+            <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
+              <Ionicons name="person-add" size={28} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.welcomeText}>Manage Users</Text>
+
       </View>
 
       <View style={styles.content}>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddUser}>
-          <Ionicons name="add-circle" size={24} color="#fff" />
-          <Text style={styles.addButtonText}>Add User</Text>
-        </TouchableOpacity>
 
-        <ScrollView style={styles.roleCardsContainer}>
-          <View style={styles.roleCardsRow}>
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.cardContainer}>
             <RoleCard
               role="admin"
               count={getUsersByRole('admin').length}
@@ -798,19 +862,17 @@ export default function ManageUsers() {
               onPress={() => handleRoleCardPress('lecturer')}
               iconName="school"
             />
-          </View>
-          <View style={styles.roleCardsRow}>
             <RoleCard
               role="student"
               count={getUsersByRole('student').length}
               onPress={() => handleRoleCardPress('student')}
-              iconName="people"
+              iconName="person"
             />
           </View>
         </ScrollView>
       </View>
 
-      <UserListModal
+      <UserListDrawer
         visible={showUserListModal}
         onClose={() => setShowUserListModal(false)}
         users={selectedRole ? getUsersByRole(selectedRole) : []}
@@ -845,140 +907,189 @@ export default function ManageUsers() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#000000',
+  },
+  backgroundGradient: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
   },
   header: {
-    backgroundColor: 'transparent',
     padding: 20,
-    paddingTop: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    paddingTop: 40,
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 20,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoImage: {
+  headerRight: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+  },
+  menuButton: {
+    marginTop: 8,
+  },
+  iconWrapper: {
     width: 50,
     height: 50,
-    marginRight: 10,
-  },
-  headerTitleContainer: {
-    flexDirection: 'row',
+    borderRadius: 25,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  headerTitle: {
-    fontSize: 75,
-    marginTop: 10,
-    lineHeight: 75,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  headerTitleChe: {
-    color: '#002147',
-    fontFamily: 'THEDISPLAYFONT',
-  },
-  headerTitleQr: {
-    color: '#FFD700',
-    fontFamily: 'THEDISPLAYFONT',
+  appName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
   welcomeText: {
     fontSize: 18,
-    color: '#002147',
+    color: '#FFFFFF',
     opacity: 0.9,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   content: {
     flex: 1,
     padding: 20,
   },
+  cardContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
   addButton: {
+    borderRadius: 16,
+    marginBottom: 20,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  addButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1a73e8',
     padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
-    elevation: 4,
-    shadowColor: '#1a73e8',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
   },
   addButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
   },
   roleCardsContainer: {
     flex: 1,
-  },
-  roleCardsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    paddingHorizontal: 5,
   },
   roleCard: {
-    flex: 1,
-    backgroundColor: '#fff',
+    width: '48%',
+    marginBottom: 16,
     borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 5,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.2,
     shadowRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.1)',
+    elevation: 5,
   },
-  roleCardContent: {
+  cardGradient: {
+    padding: 24,
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 20,
   },
-  roleIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+  cardIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+    backgroundColor: '#000000',
   },
-  adminIconContainer: {
-    backgroundColor: 'rgba(26, 115, 232, 0.1)',
-  },
-  lecturerIconContainer: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-  },
-  studentIconContainer: {
-    backgroundColor: 'rgba(255, 152, 0, 0.1)',
-  },
-  roleInfo: {
+  cardTitleContainer: {
     flex: 1,
   },
-  roleTitle: {
-    fontSize: 18,
+  cardTitle: {
+    fontSize: 22,
     fontWeight: '700',
-    color: '#1a73e8',
+    color: '#000000',
     marginBottom: 4,
   },
-  roleCount: {
+  cardSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: '#000000',
+    fontWeight: '500',
   },
-  roleArrow: {
-    marginLeft: 8,
+  cardContent: {
+    marginBottom: 20,
+  },
+  cardStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    padding: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: '#FFFFFF',
+    paddingTop: 16,
+  },
+  cardAction: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  adminIconContainer: {
+    backgroundColor: '#000000',
+  },
+  lecturerIconContainer: {
+    backgroundColor: '#000000',
+  },
+  studentIconContainer: {
+    backgroundColor: '#000000',
   },
   userCard: {
-    backgroundColor: '#fff',
+    backgroundColor: '#000000',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
@@ -991,7 +1102,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.1)',
+    borderColor: '#FFFFFF',
   },
   userInfo: {
     flex: 1,
@@ -1000,17 +1111,17 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a73e8',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   userId: {
     fontSize: 13,
-    color: '#666',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 14,
-    color: '#666',
+    color: '#FFFFFF',
   },
   userActions: {
     flexDirection: 'row',
@@ -1030,85 +1141,85 @@ const styles = StyleSheet.create({
   deleteButton: {
     backgroundColor: 'rgba(244, 67, 54, 0.1)',
   },
-  inputContainer: {
-    marginBottom: 15,
-  },
   inputLabel: {
     fontSize: 14,
-    color: '#666',
+    color: '#FFFFFF',
     marginBottom: 8,
   },
-  input: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
+  inputContainer: {
+    marginBottom: 20,
   },
-  roleContainer: {
+  inputWrapper: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    paddingHorizontal: 12,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#FFFFFF',
+  },
+  roleButtons: {
+    flexDirection: 'column',
+    marginBottom: 24,
   },
   roleButton: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: '#f8f9fa',
-    marginHorizontal: 4,
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: '#000000',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    marginBottom: 12,
   },
   roleButtonSelected: {
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#000000',
+    borderColor: '#1a73e8',
   },
   roleButtonText: {
-    color: '#666',
-    fontSize: 14,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
   },
   roleButtonTextSelected: {
-    color: '#fff',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    position: 'relative',
-  },
-  modalButton: {
-    flex: 1,
-    padding: 15,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginHorizontal: 5,
+    color: '#FFFFFF',
   },
   cancelButton: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#000000',
   },
   saveButton: {
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#000000',
   },
   cancelButtonText: {
-    color: '#666',
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   saveButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   errorContainer: {
-    backgroundColor: '#FFEBEE',
-    padding: 10,
-    borderRadius: 5,
-    marginBottom: 10,
+    padding: 16,
+    backgroundColor: 'rgba(211, 47, 47, 0.1)',
+    borderRadius: 16,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  errorIcon: {
+    marginRight: 8,
   },
   errorText: {
     color: '#D32F2F',
     fontSize: 14,
+    flex: 1,
   },
   modalOverlay: {
     flex: 1,
@@ -1117,20 +1228,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 25,
+    backgroundColor: '#000000',
+    borderRadius: 24,
+    padding: 24,
     width: '90%',
-    maxWidth: 400,
-    maxHeight: '90%',
-    position: 'absolute',
-    top: '5%',
-    left: '5%',
-    right: '5%',
-    bottom: 'auto',
+    maxHeight: '80%',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
   },
-  modalScrollContent: {
-    flexGrow: 1,
+  userListModalContent: {
+    backgroundColor: '#000000',
+    borderRadius: 24,
+    padding: 24,
+    width: '90%',
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1138,54 +1255,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  modalIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a73e8',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  closeButton: {
-    padding: 5,
-  },
-  userList: {
-    maxHeight: '80%',
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(26, 115, 232, 0.1)',
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 20,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#333',
     marginLeft: 8,
+    fontSize: 16,
+    color: '#FFFFFF',
   },
   userStats: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+    backgroundColor: '#000000',
     padding: 12,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderRadius: 12,
   },
   statsText: {
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  userList: {
+    maxHeight: '80%',
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -1193,15 +1317,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(26, 115, 232, 0.1)',
-    backgroundColor: '#fff',
+    borderTopColor: '#FFFFFF',
+    backgroundColor: '#000000',
     borderRadius: 12,
     marginTop: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
   },
   paginationButton: {
     width: 40,
@@ -1209,7 +1328,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#000000',
     marginHorizontal: 8,
   },
   paginationButtonDisabled: {
@@ -1218,32 +1337,49 @@ const styles = StyleSheet.create({
   paginationText: {
     marginHorizontal: 16,
     fontSize: 14,
-    color: '#666',
+    color: '#FFFFFF',
     fontWeight: '500',
   },
   confirmModalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
+    backgroundColor: '#000000',
+    borderRadius: 24,
     padding: 25,
     width: '90%',
     maxWidth: 400,
     alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  confirmModalIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   confirmModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#F44336',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginBottom: 16,
   },
   confirmModalText: {
     fontSize: 16,
-    color: '#333',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
   },
   confirmModalWarning: {
     fontSize: 14,
-    color: '#666',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 24,
   },
@@ -1254,15 +1390,15 @@ const styles = StyleSheet.create({
   },
   confirmModalButton: {
     flex: 1,
-    padding: 12,
-    borderRadius: 12,
+    padding: 16,
+    borderRadius: 16,
     alignItems: 'center',
     marginHorizontal: 8,
   },
   deleteButtonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   backButton: {
     marginRight: 10,
@@ -1288,118 +1424,71 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 5,
+    backgroundColor: '#000000',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
   },
   drawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: 'rgba(74, 0, 224, 0.1)',
   },
   drawerHandle: {
     position: 'absolute',
     top: 8,
     width: 40,
     height: 4,
-    backgroundColor: '#ccc',
+    backgroundColor: '#4A00E0',
     borderRadius: 2,
+    opacity: 0.3,
   },
   drawerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#002147',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2E3192',
   },
   drawerContent: {
     padding: 20,
   },
   formSection: {
     marginBottom: 32,
+    backgroundColor: 'rgba(74, 0, 224, 0.02)',
+    borderRadius: 16,
+    padding: 16,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 20,
   },
+  sectionIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(74, 0, 224, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#002147',
-    marginLeft: 12,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-    paddingHorizontal: 12,
+    color: '#2E3192',
   },
   inputIcon: {
     marginRight: 8,
   },
-  input: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
-  },
   nameContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  roleButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#f8f9fa',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  roleButtonSelected: {
-    backgroundColor: '#1a73e8',
-    borderColor: '#1a73e8',
-  },
-  roleIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  roleIconContainerSelected: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  roleButtonText: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  roleButtonTextSelected: {
-    color: '#fff',
   },
   drawerButtons: {
     flexDirection: 'row',
@@ -1410,7 +1499,7 @@ const styles = StyleSheet.create({
   drawerButton: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
     marginHorizontal: 5,
     flexDirection: 'row',
@@ -1419,20 +1508,30 @@ const styles = StyleSheet.create({
   buttonIcon: {
     marginRight: 8,
   },
-  cancelButton: {
-    backgroundColor: '#f8f9fa',
+  closeButton: {
+    padding: 8,
   },
-  saveButton: {
-    backgroundColor: '#1a73e8',
+  disabledButton: {
+    opacity: 0.5,
   },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
+  logoImage: {
+    width: 40,
+    height: 40,
+    marginRight: 10,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerTitleChe: {
+    marginRight: 2,
+  },
+  headerTitleQr: {
+    color: '#1BFFFF',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 }); 

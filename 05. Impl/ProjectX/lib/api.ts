@@ -71,48 +71,41 @@ const handleResponse = async (response: Response) => {
   return response.json();
 };
 
-export const authenticateUser = async (username: string, password: string) => {
+export const authenticateUser = async (username: string, password: string, role: string) => {
   try {
-    // For development/testing, use mock data
-    const mockUser = mockUsers.find(
-      user => user.username === username && user.password === password
-    );
+    const response = await fetch(`${API_CONFIG.baseURL}/auth/login`, {
+      method: 'POST',
+      headers: API_CONFIG.headers,
+      body: JSON.stringify({ username, password, role }),
+    });
 
-    if (mockUser) {
+    const data = await handleResponse(response);
+    
+    if (data) {
       // Create mock login log
       try {
         await fetch(`${API_CONFIG.baseURL}/logs/mock`, {
           method: 'POST',
           headers: API_CONFIG.headers,
           body: JSON.stringify({
-            userId: mockUser.id,
-            username: mockUser.username,
-            role: mockUser.role
+            userId: data._id,
+            username: data.username,
+            role: data.role
           }),
         });
       } catch (error) {
         console.error('Error creating mock login log:', error);
       }
 
-      // Remove password from the response
-      const { password: _, ...userWithoutPassword } = mockUser;
       return {
         success: true,
-        user: userWithoutPassword
+        user: data
       };
     }
 
-    // If not using mock data, make the API call
-    const response = await fetch(`${API_CONFIG.baseURL}/auth/login`, {
-      method: 'POST',
-      headers: API_CONFIG.headers,
-      body: JSON.stringify({ username, password }),
-    });
-
-    const data = await handleResponse(response);
     return {
-      success: true,
-      user: data
+      success: false,
+      error: 'Invalid credentials'
     };
   } catch (error) {
     return {
